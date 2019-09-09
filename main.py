@@ -19,7 +19,7 @@ from machine import I2C, RTC, Pin
 from sht30 import SHT30
 from onewire import DS18X20
 from onewire import OneWire
-from MLX90614 import MLX90614
+from mlx90614 import MLX90614
 from AS726X import AS726X
 import socket
 import binascii
