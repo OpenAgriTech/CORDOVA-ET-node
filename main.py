@@ -6,12 +6,12 @@ The looger reads
 * First DS18X20 temperature sensor on the OneWire channels
 * 6 spectral channels of the AS726X
 
-Frequencies are adapted to Europe
+Frequencies can be configured in the config file
 
 """
 
 __author__ = 'Jose A. Jimenez-Berni'
-__version__ = '0.1.0'
+__version__ = '0.1.2'
 __license__ = 'MIT'
 
 from network import LoRa
@@ -61,7 +61,12 @@ def load_config(my_config_dict):
 
 # Give some time for degubbing
 time.sleep(2.5)
-my_config_dict = load_config(my_config_dict)
+if config.reset_settings:
+    print("Resetting config...")
+    save_config(my_config_dict)
+else:
+    my_config_dict = load_config(my_config_dict)
+
 wake_s = machine.wake_reason()
 
 print(wake_s)
@@ -72,24 +77,6 @@ lora = LoRa(mode=LoRa.LORAWAN)
 dev_eui = binascii.unhexlify(config.DEV_EUI.replace(' ',''))
 app_eui = binascii.unhexlify(config.APP_EUI.replace(' ',''))
 app_key = binascii.unhexlify(config.APP_KEY.replace(' ',''))
-
-print("Setting up LoRa channels...")
-# Select the right frequencies from the config file
-frequencies_australia = [916800000, 917000000, 917200000, 917400000,
-                         917600000, 917800000, 918000000, 918200000]
-
-frequencies_europe = [868100000, 868300000, 868500000, 867100000,
-                         867300000, 867500000, 867700000, 867900000]
-
-frequencies=frequencies_europe
-lora.add_channel(0, frequency=frequencies[0], dr_min=0, dr_max=5)
-lora.add_channel(1, frequency=frequencies[1], dr_min=0, dr_max=5)
-lora.add_channel(2, frequency=frequencies[2], dr_min=0, dr_max=5)
-lora.add_channel(3, frequency=frequencies[3], dr_min=0, dr_max=5)
-lora.add_channel(4, frequency=frequencies[4], dr_min=0, dr_max=5)
-lora.add_channel(5, frequency=frequencies[5], dr_min=0, dr_max=5)
-lora.add_channel(6, frequency=frequencies[6], dr_min=0, dr_max=5)
-lora.add_channel(7, frequency=frequencies[7], dr_min=0, dr_max=5)
 
 
 if wake_s[0] == machine.PIN_WAKE:
@@ -126,6 +113,20 @@ while not lora.has_joined():
         machine.deepsleep(60*1000)  # go to sleep for 1 minute
 
 print("Connected to LoRa")
+# Select the right frequencies in the config file
+
+if config.nano_gateway==True:
+    frequencies=config.frequency
+    print("Setting up LoRa channels to {}MHz".format(frequencies[0]/1e6))
+    lora.add_channel(0, frequency=frequencies[0], dr_min=0, dr_max=5)
+    lora.add_channel(1, frequency=frequencies[1], dr_min=0, dr_max=5)
+    lora.add_channel(2, frequency=frequencies[2], dr_min=0, dr_max=5)
+    lora.add_channel(3, frequency=frequencies[3], dr_min=0, dr_max=5)
+    lora.add_channel(4, frequency=frequencies[4], dr_min=0, dr_max=5)
+    lora.add_channel(5, frequency=frequencies[5], dr_min=0, dr_max=5)
+    lora.add_channel(6, frequency=frequencies[6], dr_min=0, dr_max=5)
+    lora.add_channel(7, frequency=frequencies[7], dr_min=0, dr_max=5)
+
 pycom.rgbled(0x000000) # now turn the LED off
 wdt.feed()
 lora.nvram_save()
@@ -248,6 +249,7 @@ while True:
     try:
         msg = bytearray(struct.pack('14f', *float_values))
         s.send(msg)
+        print(float_values)
     except Exception as error:
         print(error)
         pass
