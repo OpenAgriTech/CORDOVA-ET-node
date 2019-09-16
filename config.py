@@ -10,8 +10,8 @@ APP_EUI = "XX"
 APP_KEY = "XXXX"
 
 # Select the radio frequecies. See frequencies.py
+# Options are: frequencies_europe, frequencies_nano_europe, frequencies_australia, frequencies_nano_australia
 frequency = frequencies.frequencies_nano_europe
-nano_gateway = True
 
-# Reset settings to delete any LoRaWAN confing and sampling interval
-reset_settings = False
+# If we are using nano_gateway, we override settings from LoRaWAN server
+nano_gateway = True

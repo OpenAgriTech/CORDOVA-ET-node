@@ -11,7 +11,7 @@ Frequencies can be configured in the config file
 """
 
 __author__ = 'Jose A. Jimenez-Berni'
-__version__ = '0.1.2'
+__version__ = '0.1.3'
 __license__ = 'MIT'
 
 from network import LoRa
@@ -41,7 +41,7 @@ pycom.heartbeat(False)
 
 # Define sleep time in seconds. Default is 1min, modify by downlink message.
 # This needs to be read from file since data is lost between reboots
-my_config_dict = {'sleep_time': 300, 'lora_ok': False}
+my_config_dict = {'sleep_time': 300, 'lora_ok': False, 'version': __version__}
 
 def save_config(my_config_dict):
     with open("/flash/my_config.json", 'w') as conf_file:
@@ -61,11 +61,19 @@ def load_config(my_config_dict):
 
 # Give some time for degubbing
 time.sleep(2.5)
-if config.reset_settings:
-    print("Resetting config...")
+
+# If we have a new software version, we reset the settings
+
+config_dict = load_config(my_config_dict)
+if 'version' not in config_dict:
+    print("New version found...")
+    save_config(my_config_dict)
+elif config_dict['version'] != __version__:
+    print("New version found...")
     save_config(my_config_dict)
 else:
-    my_config_dict = load_config(my_config_dict)
+    my_config_dict = config_dict
+
 
 wake_s = machine.wake_reason()
 
