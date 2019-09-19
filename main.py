@@ -11,12 +11,13 @@ Frequencies can be configured in the config file
 """
 
 __author__ = 'Jose A. Jimenez-Berni'
-__version__ = '0.1.3'
+__version__ = '0.1.5'
 __license__ = 'MIT'
 
 from network import LoRa
 from machine import I2C, RTC, Pin
 from sht30 import SHT30
+from BME280 import BME280, BME280_I2CADDR
 from onewire import DS18X20
 from onewire import OneWire
 from mlx90614 import MLX90614
@@ -147,14 +148,14 @@ float_values = [-1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0
 print("Waking up I2C sensors...")
 # Init sensor on pins
 i2c_irt = I2C(0, I2C.MASTER, pins=('P22', 'P21'))
-i2c_sht = I2C(1, I2C.MASTER, pins=('P20', 'P19'))
+i2c_air = I2C(1, I2C.MASTER, pins=('P20', 'P19'))
 ow = OneWire(Pin('P23'))
 
 ### IRT Sensor
-print("Waking IRT...")
 irt = None
 try:
     irt = MLX90614(i2c_irt, 90)
+    print("Waking IRT...OK")
     time.sleep(1)
     float_values[0] = irt.read_ambient_temp()
     float_values[1] = irt.read_object_temp()
@@ -167,32 +168,60 @@ except Exception as error:
     print("Couldn't find IRT")
 wdt.feed()
 ### Air sensor
-print("Waking SHT30...")
-sht30 = None
-try:
-    sht30 = SHT30(i2c_sht)
-    time.sleep(1)
-    float_values[2],float_values[3] = sht30.measure()
+if config.air_sensor == config.NONE:
+    print("Ignoring air sensor...")
+    float_values[2] = 0.0
+    float_values[3] = 0.0
     float_values[4] = 0.0
+elif config.air_sensor == config.BME280:
+    bme = None
+    try:
+        bme = BME280(address=BME280_I2CADDR, i2c=i2c_air)
+        print("Waking BME280...OK")
+        time.sleep(1)
+        float_values[2] = bme.read_temperature()/100.0
+        float_values[3] = bme.read_humidity()/1024.0
+        float_values[4] = bme.read_pressure()/256.0/100.0
 
-except Exception as error:
-    pycom.rgbled(0xff0000) # now make the LED light up red in colour
-    print(error)
-    time.sleep(5.0)  # Wait 5 senconds with the red LED
-    pycom.rgbled(0x000000) # now make the LED light up red in colour
+    except Exception as error:
+        pycom.rgbled(0xff0000) # now make the LED light up red in colour
+        print(error)
+        time.sleep(5.0)  # Wait 5 senconds with the red LED
+        pycom.rgbled(0x000000) # now make the LED light up red in colour
+        print("Couldn't find BME")
 
-    print("Couldn't find SHT30")
+elif config.air_sensor == config.SHT3x:
+    sht30 = None
+    try:
+        sht30 = SHT30(i2c_air)
+        print("Waking SHT3x...OK")
+        time.sleep(1)
+        float_values[2],float_values[3] = sht30.measure()
+        float_values[4] = 0.0
+
+    except Exception as error:
+        pycom.rgbled(0xff0000) # now make the LED light up red in colour
+        print(error)
+        time.sleep(5.0)  # Wait 5 senconds with the red LED
+        pycom.rgbled(0x000000) # now make the LED light up red in colour
+        print("Couldn't find SHT30")
+
+else:
+    print("Sensor not supported")
+
 wdt.feed()
 ### Soil sensor
-print("Waking OWD...")
 temp = None
 try:
     if len(ow.scan()) > 0:
+        print("Waking OWD...OK")
         print("Devices P11: {}".format(ow.scan()))
         temp = DS18X20(ow)
         temp.start_convertion()
         time.sleep(1)
         float_values[5] = temp.read_temp_async()
+        if float_values[5] is None:
+            float_values[5] = -100
         #time.sleep(1)
 except Exception as error:
     print(error)
@@ -206,7 +235,7 @@ wdt.feed()
 ### Pyranometer
 print("Waking up pyranometer...")
 try:
-    sensor = AS726X(i2c=i2c_sht, gain=2)
+    sensor = AS726X(i2c=i2c_air, gain=2)
     sensor_type = sensor.get_sensor_type()
     time.sleep(1)
     print('Ready to read on wavelengths:')
@@ -255,9 +284,9 @@ msg = bytearray(56)
 
 while True:
     try:
+        print(float_values)
         msg = bytearray(struct.pack('14f', *float_values))
         s.send(msg)
-        print(float_values)
     except Exception as error:
         print(error)
         pass
