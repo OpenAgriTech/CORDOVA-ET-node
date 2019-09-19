@@ -152,10 +152,10 @@ i2c_air = I2C(1, I2C.MASTER, pins=('P20', 'P19'))
 ow = OneWire(Pin('P23'))
 
 ### IRT Sensor
-print("Waking IRT...")
 irt = None
 try:
     irt = MLX90614(i2c_irt, 90)
+    print("Waking IRT...OK")
     time.sleep(1)
     float_values[0] = irt.read_ambient_temp()
     float_values[1] = irt.read_object_temp()
@@ -177,6 +177,7 @@ elif config.air_sensor == config.BME280:
     bme = None
     try:
         bme = BME280(address=BME280_I2CADDR, i2c=i2c_air)
+        print("Waking BME280...OK")
         time.sleep(1)
         float_values[2] = bme.read_temperature()/100.0
         float_values[3] = bme.read_humidity()/1024.0
@@ -190,10 +191,10 @@ elif config.air_sensor == config.BME280:
         print("Couldn't find BME")
 
 elif config.air_sensor == config.SHT3x:
-    print("Waking SHT3x...")
     sht30 = None
     try:
         sht30 = SHT30(i2c_air)
+        print("Waking SHT3x...OK")
         time.sleep(1)
         float_values[2],float_values[3] = sht30.measure()
         float_values[4] = 0.0
@@ -210,15 +211,17 @@ else:
 
 wdt.feed()
 ### Soil sensor
-print("Waking OWD...")
 temp = None
 try:
     if len(ow.scan()) > 0:
+        print("Waking OWD...OK")
         print("Devices P11: {}".format(ow.scan()))
         temp = DS18X20(ow)
         temp.start_convertion()
         time.sleep(1)
         float_values[5] = temp.read_temp_async()
+        if float_values[5] is None:
+            float_values[5] = -100
         #time.sleep(1)
 except Exception as error:
     print(error)
@@ -281,9 +284,9 @@ msg = bytearray(56)
 
 while True:
     try:
+        print(float_values)
         msg = bytearray(struct.pack('14f', *float_values))
         s.send(msg)
-        print(float_values)
     except Exception as error:
         print(error)
         pass
