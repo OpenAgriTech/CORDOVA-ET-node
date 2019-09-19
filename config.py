@@ -15,3 +15,11 @@ frequency = frequencies.frequencies_nano_europe
 
 # If we are using nano_gateway, we override settings from LoRaWAN server
 nano_gateway = True
+
+# Supported air temperature and humidity sensors
+NONE = const(0)
+BME280 = const(1)
+SHT3x = const(2)
+
+# Select option from above. Default is SHT3x
+air_sensor = SHT3x
