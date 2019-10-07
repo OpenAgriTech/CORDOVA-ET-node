@@ -11,7 +11,7 @@ Frequencies can be configured in the config file
 """
 
 __author__ = 'Jose A. Jimenez-Berni'
-__version__ = '0.1.5'
+__version__ = '0.1.6'
 __license__ = 'MIT'
 
 from network import LoRa
@@ -87,6 +87,17 @@ dev_eui = binascii.unhexlify(config.DEV_EUI.replace(' ',''))
 app_eui = binascii.unhexlify(config.APP_EUI.replace(' ',''))
 app_key = binascii.unhexlify(config.APP_KEY.replace(' ',''))
 
+if config.nano_gateway==True:
+    frequencies=config.frequency
+    print("Setting up LoRa channels to {}MHz".format(frequencies[0]/1e6))
+    lora.add_channel(0, frequency=frequencies[0], dr_min=0, dr_max=5)
+    lora.add_channel(1, frequency=frequencies[1], dr_min=0, dr_max=5)
+    lora.add_channel(2, frequency=frequencies[2], dr_min=0, dr_max=5)
+    lora.add_channel(3, frequency=frequencies[3], dr_min=0, dr_max=5)
+    lora.add_channel(4, frequency=frequencies[4], dr_min=0, dr_max=5)
+    lora.add_channel(5, frequency=frequencies[5], dr_min=0, dr_max=5)
+    lora.add_channel(6, frequency=frequencies[6], dr_min=0, dr_max=5)
+    lora.add_channel(7, frequency=frequencies[7], dr_min=0, dr_max=5)
 
 if wake_s[0] == machine.PIN_WAKE:
     print("Pin wake up")
@@ -123,18 +134,6 @@ while not lora.has_joined():
 
 print("Connected to LoRa")
 # Select the right frequencies in the config file
-
-if config.nano_gateway==True:
-    frequencies=config.frequency
-    print("Setting up LoRa channels to {}MHz".format(frequencies[0]/1e6))
-    lora.add_channel(0, frequency=frequencies[0], dr_min=0, dr_max=5)
-    lora.add_channel(1, frequency=frequencies[1], dr_min=0, dr_max=5)
-    lora.add_channel(2, frequency=frequencies[2], dr_min=0, dr_max=5)
-    lora.add_channel(3, frequency=frequencies[3], dr_min=0, dr_max=5)
-    lora.add_channel(4, frequency=frequencies[4], dr_min=0, dr_max=5)
-    lora.add_channel(5, frequency=frequencies[5], dr_min=0, dr_max=5)
-    lora.add_channel(6, frequency=frequencies[6], dr_min=0, dr_max=5)
-    lora.add_channel(7, frequency=frequencies[7], dr_min=0, dr_max=5)
 
 pycom.rgbled(0x000000) # now turn the LED off
 wdt.feed()
