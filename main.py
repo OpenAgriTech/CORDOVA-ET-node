@@ -87,6 +87,7 @@ dev_eui = binascii.unhexlify(config.DEV_EUI.replace(' ',''))
 app_eui = binascii.unhexlify(config.APP_EUI.replace(' ',''))
 app_key = binascii.unhexlify(config.APP_KEY.replace(' ',''))
 
+# Enforce the frequecies if using Nano Gateway
 if config.nano_gateway==True:
     frequencies=config.frequency
     print("Setting up LoRa channels to {}MHz".format(frequencies[0]/1e6))
@@ -116,9 +117,7 @@ else:  # deepsleep.POWER_ON_WAKE:
     print("Joining LoRa after power ON...")
     # join a network using OTAA
     lora.join(activation=LoRa.OTAA, auth=(dev_eui, app_eui, app_key), timeout=0)
-    lora.nvram_save()
-    # Allow some time for flashing
-    time.sleep(5.0)
+
 join_retry = 0
 # wait until the module has joined the network
 while not lora.has_joined():
@@ -134,6 +133,17 @@ while not lora.has_joined():
 
 print("Connected to LoRa")
 # Select the right frequencies in the config file
+if config.nano_gateway==True:
+    frequencies=config.frequency
+    print("Setting up LoRa channels to {}MHz".format(frequencies[0]/1e6))
+    lora.add_channel(0, frequency=frequencies[0], dr_min=0, dr_max=5)
+    lora.add_channel(1, frequency=frequencies[1], dr_min=0, dr_max=5)
+    lora.add_channel(2, frequency=frequencies[2], dr_min=0, dr_max=5)
+    lora.add_channel(3, frequency=frequencies[3], dr_min=0, dr_max=5)
+    lora.add_channel(4, frequency=frequencies[4], dr_min=0, dr_max=5)
+    lora.add_channel(5, frequency=frequencies[5], dr_min=0, dr_max=5)
+    lora.add_channel(6, frequency=frequencies[6], dr_min=0, dr_max=5)
+    lora.add_channel(7, frequency=frequencies[7], dr_min=0, dr_max=5)
 
 pycom.rgbled(0x000000) # now turn the LED off
 wdt.feed()
