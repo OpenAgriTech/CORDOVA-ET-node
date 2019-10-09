@@ -11,7 +11,7 @@ Frequencies can be configured in the config file
 """
 
 __author__ = 'Jose A. Jimenez-Berni'
-__version__ = '0.1.6'
+__version__ = '0.1.7'
 __license__ = 'MIT'
 
 from network import LoRa
