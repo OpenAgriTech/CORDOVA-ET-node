@@ -11,10 +11,10 @@ APP_KEY = "XXXX"
 
 # Select the radio frequecies. See frequencies.py
 # Options are: frequencies_europe, frequencies_nano_europe, frequencies_australia, frequencies_nano_australia
-frequency = frequencies.frequencies_nano_europe
+frequency = frequencies.frequencies_europe
 
 # If we are using nano_gateway, we override settings from LoRaWAN server
-nano_gateway = True
+nano_gateway = False
 
 # Supported air temperature and humidity sensors
 NONE = const(0)
