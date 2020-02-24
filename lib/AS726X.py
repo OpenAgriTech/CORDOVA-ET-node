@@ -80,6 +80,8 @@ class AS726X:
         self._i2c = i2c
 
         # Check and initialize device.
+        print('Soft reset')
+        self.soft_reset()
         print('Init')
         self.init_device()
         print('Done')

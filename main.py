@@ -11,7 +11,7 @@ Frequencies can be configured in the config file
 """
 
 __author__ = 'Jose A. Jimenez-Berni'
-__version__ = '0.1.7'
+__version__ = '0.1.8'
 __license__ = 'MIT'
 
 from network import LoRa
@@ -36,6 +36,7 @@ rtc = RTC()
 MAX_JOIN_RETRY = 100  # Max number of LoRa join before going to deep sleep
 
 print("CORDOVA-ET Node v{version}".format(version=__version__))
+print(rtc.now())
 # Save battery by disabling the LED
 pycom.heartbeat(False)
 
@@ -77,8 +78,10 @@ else:
 
 
 wake_s = machine.wake_reason()
+reset_s = machine.reset_cause()
 
 print(wake_s)
+print(reset_s)
 
 # Initialize LoRa in LORAWAN mode.
 lora = LoRa(mode=LoRa.LORAWAN)
