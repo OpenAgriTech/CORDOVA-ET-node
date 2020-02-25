@@ -1,0 +1,2 @@
+OK = 0x00
+WDT_ERROR = 0x01

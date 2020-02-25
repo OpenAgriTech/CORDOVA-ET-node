@@ -59,6 +59,8 @@ SENSORTYPE_AS7262 = 0x3E
 SENSORTYPE_AS7263 = 0x3F
 
 POLLING_DELAY = 5 #Amount of ms to wait between checking for virtual register changes
+POLLING_RETRY = 10 #Amount of ms to wait between checking for virtual register changes
+
 
 class AS726X:
     def __init__(self, i2c, address=AS726X_ADDR, mode=3, gain=3,
@@ -94,21 +96,29 @@ class AS726X:
     	   _ = self._device.readU8(AS72XX_SLAVE_READ_REG) # Read the byte but do nothing with it
 
         # Wait for WRITE register to be empty
+        i_try=0
         while True:
             status = self._device.readU8(AS72XX_SLAVE_STATUS_REG)
             if (status & AS72XX_SLAVE_TX_VALID) == 0:
                 break # No inbound TX pending at slave. Okay to write now.
             time.sleep_ms(POLLING_DELAY)
+            if i_try > POLLING_RETRY:
+                raise AS726XError(AS726XError.TIMEOUT_ERROR)
+            i_try+=1
 
         # Send the virtual register address (bit 7 should be 0 to indicate we are reading a register)
         self._device.write8(AS72XX_SLAVE_WRITE_REG, virtual_address)
 
         # Wait for READ flag to be set
+        i_try=0
         while True:
             status = self._device.readU8(AS72XX_SLAVE_STATUS_REG)
             if ((status & AS72XX_SLAVE_RX_VALID) != 0): # Data is ready
                 break # No inbound TX pending at slave. Okay to write now.
             time.sleep_ms(POLLING_DELAY)
+            if i_try > POLLING_RETRY:
+                raise AS726XError(AS726XError.TIMEOUT_ERROR)
+            i_try+=1
 
         result = self._device.readU8(AS72XX_SLAVE_READ_REG)
         return result
@@ -116,21 +126,29 @@ class AS726X:
     # Write to a virtual register in the AS726x
     def virtual_write_register(self, virtual_address, value):
         # Wait for WRITE register to be empty
+        i_try=0
         while True:
             status = self._device.readU8(AS72XX_SLAVE_STATUS_REG)
             if ((status & AS72XX_SLAVE_TX_VALID) == 0):
                 break # No inbound TX pending at slave. Okay to write now.
             time.sleep_ms(POLLING_DELAY)
+            if i_try > POLLING_RETRY:
+                raise AS726XError(AS726XError.TIMEOUT_ERROR)
+            i_try+=1
 
         # Send the virtual register address (setting bit 7 to indicate we are writing to a register).
         self._device.write8(AS72XX_SLAVE_WRITE_REG, (virtual_address | 0x80))
 
         # Wait for WRITE register to be empty
+        i_try=0
         while True:
             status = self._device.readU8(AS72XX_SLAVE_STATUS_REG)
             if ((status & AS72XX_SLAVE_TX_VALID) == 0):
                 break # No inbound TX pending at slave. Okay to write now.
             time.sleep_ms(POLLING_DELAY)
+            if i_try > POLLING_RETRY:
+                raise AS726XError(AS726XError.TIMEOUT_ERROR)
+            i_try+=1
 
         # Send the data to complete the operation.
         self._device.write8(AS72XX_SLAVE_WRITE_REG, value)
@@ -289,9 +307,12 @@ class AS726X:
 
     def soft_reset(self):
         #Read, mask/set, write
+        print("Read control setup")
     	value = self.virtual_read_register(AS726x_CONTROL_SETUP)
     	value = value | (1 << 7)
+        print("Write reset cmd")
     	self.virtual_write_register(AS726x_CONTROL_SETUP, value)
+        print("Sleep")
         time.sleep_ms(800)
 
     def init_device(self):
@@ -360,3 +381,28 @@ class AS726X:
             return [450, 500, 550, 570, 600, 650]
         else:
             return [610, 680, 730, 760, 810, 860]
+
+class AS726XError(Exception):
+    """
+    Custom exception for errors on sensor management
+    """
+    BUS_ERROR = 0x01
+    DATA_ERROR = 0x02
+    CRC_ERROR = 0x03
+    TIMEOUT_ERROR = 0x04
+
+    def __init__(self, error_code=None):
+        self.error_code = error_code
+        super().__init__(self.get_message())
+
+    def get_message(self):
+        if self.error_code == AS726XError.BUS_ERROR:
+            return "Bus error"
+        elif self.error_code == AS726XError.DATA_ERROR:
+            return "Data error"
+        elif self.error_code == AS726XError.CRC_ERROR:
+            return "CRC error"
+        elif self.error_code == AS726XError.TIMEOUT_ERROR:
+            return "Timeout error"
+        else:
+            return "Unknown error"

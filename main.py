@@ -11,7 +11,7 @@ Frequencies can be configured in the config file
 """
 
 __author__ = 'Jose A. Jimenez-Berni'
-__version__ = '0.1.8'
+__version__ = '0.1.9'
 __license__ = 'MIT'
 
 from network import LoRa
@@ -30,6 +30,9 @@ import machine
 import pycom
 import config
 import json
+import status
+
+status_flag=0x0
 
 rtc = RTC()
 
@@ -79,6 +82,9 @@ else:
 
 wake_s = machine.wake_reason()
 reset_s = machine.reset_cause()
+
+if reset_s==machine.WDT_RESET:
+    status_flag|=status.WDT_ERROR
 
 print(wake_s)
 print(reset_s)
