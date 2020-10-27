@@ -20,6 +20,7 @@ nano_gateway = False
 NONE = const(0)
 BME280 = const(1)
 SHT3x = const(2)
+SHT3x_single = const(3)
 
 # Select option from above. Default is SHT3x
-air_sensor = SHT3x
+air_sensor = SHT3x_single

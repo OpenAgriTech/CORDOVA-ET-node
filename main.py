@@ -11,7 +11,7 @@ Frequencies can be configured in the config file
 """
 
 __author__ = 'Jose A. Jimenez-Berni'
-__version__ = '0.1.9'
+__version__ = '0.2.0'
 __license__ = 'MIT'
 
 from network import LoRa
@@ -212,6 +212,22 @@ elif config.air_sensor == config.SHT3x:
     sht30 = None
     try:
         sht30 = SHT30(i2c_air)
+        print("Waking SHT3x...OK")
+        time.sleep(1)
+        float_values[2],float_values[3] = sht30.measure()
+        float_values[4] = 0.0
+
+    except Exception as error:
+        pycom.rgbled(0xff0000) # now make the LED light up red in colour
+        print(error)
+        time.sleep(5.0)  # Wait 5 senconds with the red LED
+        pycom.rgbled(0x000000) # now make the LED light up red in colour
+        print("Couldn't find SHT30")
+
+elif config.air_sensor == config.SHT3x_single:
+    sht30 = None
+    try:
+        sht30 = SHT30(i2c_air, i2c_address=0x44)
         print("Waking SHT3x...OK")
         time.sleep(1)
         float_values[2],float_values[3] = sht30.measure()
