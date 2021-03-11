@@ -1,21 +1,25 @@
 """
 CORDOVA-ET logger code compatible with the LoPy 4
-The looger reads
+The looger reads:
 * Ambient and object temperature on the MLX90614
 * Air temperature and humidity on the SHT3x
 * First DS18X20 temperature sensor on the OneWire channels
 * 6 spectral channels of the AS726X
 
-Frequencies can be configured in the config file
+This version doesn't include frequencies and the defafult region is defined
+when programming the firmware on the Lopy4. Therefore this version is not
+compatible with single-frequency gateways (NanoGateway)
 
 """
 
 __author__ = 'Jose A. Jimenez-Berni'
-__version__ = '0.2.0'
+__version__ = '0.2.3'
 __license__ = 'MIT'
 
 from network import LoRa
 from machine import I2C, RTC, Pin
+import os
+from OTA import WiFiOTA
 from sht30 import SHT30
 from BME280 import BME280, BME280_I2CADDR
 from onewire import DS18X20
@@ -32,6 +36,10 @@ import config
 import json
 import status
 
+from config import WIFI_SSID, WIFI_PW, SERVER_IP
+
+DEBUG_MODE = True
+
 status_flag=0x0
 
 rtc = RTC()
@@ -39,14 +47,15 @@ rtc = RTC()
 MAX_JOIN_RETRY = 100  # Max number of LoRa join before going to deep sleep
 
 print("CORDOVA-ET Node v{version}".format(version=__version__))
-print(rtc.now())
+print(os.uname().release)
 # Save battery by disabling the LED
 pycom.heartbeat(False)
 
 
 # Define sleep time in seconds. Default is 1min, modify by downlink message.
 # This needs to be read from file since data is lost between reboots
-my_config_dict = {'sleep_time': 300, 'lora_ok': False, 'version': __version__}
+my_config_dict = {'sleep_time': 300, 'lora_ok': False, 'version': __version__,
+                  'air_sensor': config.SHT3x_single}
 
 def save_config(my_config_dict):
     with open("/flash/my_config.json", 'w') as conf_file:
@@ -64,8 +73,35 @@ def load_config(my_config_dict):
 
     return my_config_dict
 
+def green_blink(time_ms):
+    pycom.rgbled(0x001000) # now make the LED light up green in colour
+    time.sleep_ms(time_ms)
+    pycom.rgbled(0x000000) # turn off LED
+
+def red_blink(time_ms):
+    pycom.rgbled(0xaa0000) # now make the LED light up red in colour
+    time.sleep_ms(time_ms)
+    pycom.rgbled(0x000000) # turn off LED
+
+def rgb_blink(time_ms, color=0x101010):
+    pycom.rgbled(color) # now make the LED light up red in colour
+    time.sleep_ms(time_ms)
+    pycom.rgbled(0x000000) # turn off LED
+
+def scan_i2c(i2c_bus):
+    sensors=i2c_bus.scan()
+    return sensors
+
+
 # Give some time for degubbing
 time.sleep(2.5)
+
+# Setup OTA
+ota = WiFiOTA(WIFI_SSID,
+              WIFI_PW,
+              SERVER_IP,  # Update server address
+              8000)  # Update server port
+
 
 # If we have a new software version, we reset the settings
 
@@ -96,18 +132,6 @@ dev_eui = binascii.unhexlify(config.DEV_EUI.replace(' ',''))
 app_eui = binascii.unhexlify(config.APP_EUI.replace(' ',''))
 app_key = binascii.unhexlify(config.APP_KEY.replace(' ',''))
 
-# Enforce the frequecies if using Nano Gateway
-if config.nano_gateway==True:
-    frequencies=config.frequency
-    print("Setting up LoRa channels to {}MHz".format(frequencies[0]/1e6))
-    lora.add_channel(0, frequency=frequencies[0], dr_min=0, dr_max=5)
-    lora.add_channel(1, frequency=frequencies[1], dr_min=0, dr_max=5)
-    lora.add_channel(2, frequency=frequencies[2], dr_min=0, dr_max=5)
-    lora.add_channel(3, frequency=frequencies[3], dr_min=0, dr_max=5)
-    lora.add_channel(4, frequency=frequencies[4], dr_min=0, dr_max=5)
-    lora.add_channel(5, frequency=frequencies[5], dr_min=0, dr_max=5)
-    lora.add_channel(6, frequency=frequencies[6], dr_min=0, dr_max=5)
-    lora.add_channel(7, frequency=frequencies[7], dr_min=0, dr_max=5)
 
 if wake_s[0] == machine.PIN_WAKE:
     print("Pin wake up")
@@ -116,7 +140,7 @@ elif wake_s[0] == machine.RTC_WAKE:
     print("Timer wake up")
     lora.nvram_restore()
     if not lora.has_joined():
-        lora.join(activation=LoRa.OTAA, auth=(dev_eui, app_eui, app_key), timeout=0)
+        lora.join(activation=LoRa.OTAA, auth=(dev_eui, app_eui, app_key), timeout=0, dr= 0)
 elif my_config_dict['lora_ok']:
     print("Have joined before, no need to rejoin")
     lora.nvram_restore()
@@ -141,18 +165,6 @@ while not lora.has_joined():
         machine.deepsleep(60*1000)  # go to sleep for 1 minute
 
 print("Connected to LoRa")
-# Select the right frequencies in the config file
-if config.nano_gateway==True:
-    frequencies=config.frequency
-    print("Setting up LoRa channels to {}MHz".format(frequencies[0]/1e6))
-    lora.add_channel(0, frequency=frequencies[0], dr_min=0, dr_max=5)
-    lora.add_channel(1, frequency=frequencies[1], dr_min=0, dr_max=5)
-    lora.add_channel(2, frequency=frequencies[2], dr_min=0, dr_max=5)
-    lora.add_channel(3, frequency=frequencies[3], dr_min=0, dr_max=5)
-    lora.add_channel(4, frequency=frequencies[4], dr_min=0, dr_max=5)
-    lora.add_channel(5, frequency=frequencies[5], dr_min=0, dr_max=5)
-    lora.add_channel(6, frequency=frequencies[6], dr_min=0, dr_max=5)
-    lora.add_channel(7, frequency=frequencies[7], dr_min=0, dr_max=5)
 
 pycom.rgbled(0x000000) # now turn the LED off
 wdt.feed()
@@ -169,6 +181,10 @@ i2c_irt = I2C(0, I2C.MASTER, pins=('P22', 'P21'))
 i2c_air = I2C(1, I2C.MASTER, pins=('P20', 'P19'))
 ow = OneWire(Pin('P23'))
 
+if DEBUG_MODE:
+    debug_info = {'i2c_irt': scan_i2c(i2c_irt), 'i2c_air': scan_i2c(i2c_air)}
+    print(debug_info)
+
 ### IRT Sensor
 irt = None
 try:
@@ -177,21 +193,19 @@ try:
     time.sleep(1)
     float_values[0] = irt.read_ambient_temp()
     float_values[1] = irt.read_object_temp()
+    rgb_blink(100, 0xa013f2)
 except Exception as error:
-    pycom.rgbled(0xff0000) # now make the LED light up red in colour
-    print(error)
-    time.sleep(5.0)  # Wait 5 senconds with the red LED
-    pycom.rgbled(0x000000) # now make the LED light up red in colour
+    red_blink(1000)
     irt = None
     print("Couldn't find IRT")
 wdt.feed()
 ### Air sensor
-if config.air_sensor == config.NONE:
+if my_config_dict["air_sensor"] == config.NONE:
     print("Ignoring air sensor...")
     float_values[2] = 0.0
     float_values[3] = 0.0
     float_values[4] = 0.0
-elif config.air_sensor == config.BME280:
+elif my_config_dict["air_sensor"] == config.BME280:
     bme = None
     try:
         bme = BME280(address=BME280_I2CADDR, i2c=i2c_air)
@@ -200,15 +214,12 @@ elif config.air_sensor == config.BME280:
         float_values[2] = bme.read_temperature()/100.0
         float_values[3] = bme.read_humidity()/1024.0
         float_values[4] = bme.read_pressure()/256.0/100.0
-
+        rgb_blink(100, 0x0000ff)
     except Exception as error:
-        pycom.rgbled(0xff0000) # now make the LED light up red in colour
-        print(error)
-        time.sleep(5.0)  # Wait 5 senconds with the red LED
-        pycom.rgbled(0x000000) # now make the LED light up red in colour
+        red_blink(1000)
         print("Couldn't find BME")
 
-elif config.air_sensor == config.SHT3x:
+elif my_config_dict["air_sensor"] == config.SHT3x:
     sht30 = None
     try:
         sht30 = SHT30(i2c_air)
@@ -216,15 +227,12 @@ elif config.air_sensor == config.SHT3x:
         time.sleep(1)
         float_values[2],float_values[3] = sht30.measure()
         float_values[4] = 0.0
-
+        green_blink(100)
     except Exception as error:
-        pycom.rgbled(0xff0000) # now make the LED light up red in colour
-        print(error)
-        time.sleep(5.0)  # Wait 5 senconds with the red LED
-        pycom.rgbled(0x000000) # now make the LED light up red in colour
+        red_blink(1000)
         print("Couldn't find SHT30")
 
-elif config.air_sensor == config.SHT3x_single:
+elif my_config_dict["air_sensor"] == config.SHT3x_single:
     sht30 = None
     try:
         sht30 = SHT30(i2c_air, i2c_address=0x44)
@@ -232,12 +240,9 @@ elif config.air_sensor == config.SHT3x_single:
         time.sleep(1)
         float_values[2],float_values[3] = sht30.measure()
         float_values[4] = 0.0
-
+        green_blink(100)
     except Exception as error:
-        pycom.rgbled(0xff0000) # now make the LED light up red in colour
-        print(error)
-        time.sleep(5.0)  # Wait 5 senconds with the red LED
-        pycom.rgbled(0x000000) # now make the LED light up red in colour
+        rgb_blink(100, 0x13f2ab)
         print("Couldn't find SHT30")
 
 else:
@@ -256,45 +261,43 @@ try:
         float_values[5] = temp.read_temp_async()
         if float_values[5] is None:
             float_values[5] = -100
+        rgb_blink(100, 0xf2b313)
+    else:
+        print("Soil temp not found")
+        red_blink(1000)
         #time.sleep(1)
 except Exception as error:
     print(error)
-    pycom.rgbled(0xff0000) # now make the LED light up red in colour
-    time.sleep(5.0)  # Wait 5 senconds with the red LED
-    pycom.rgbled(0x000000) # now make the LED light up red in colour
+    red_blink(1000)
 
     print("Couldn't find OWD")
     float_values[5] = -100.0
 wdt.feed()
-### Pyranometer
-print("Waking up pyranometer...")
-try:
-    sensor = AS726X(i2c=i2c_air, gain=2)
-    sensor_type = sensor.get_sensor_type()
-    time.sleep(1)
-    print('Ready to read on wavelengths:')
-    print(sensor.get_wavelengths())
-    sensor.take_measurements()
-    float_values[6:12] = sensor.get_calibrated_values()
-    float_values[12] = sensor.get_temperature()
+### Pyranometer (only if not using SHT3x)
+if my_config_dict["air_sensor"] != config.SHT3x_single:
+    print("Waking up pyranometer...")
+    try:
+        sensor = AS726X(i2c=i2c_air, gain=2)
+        sensor_type = sensor.get_sensor_type()
+        time.sleep(1)
+        print('Ready to read on wavelengths:')
+        print(sensor.get_wavelengths())
+        sensor.take_measurements()
+        float_values[6:12] = sensor.get_calibrated_values()
+        float_values[12] = sensor.get_temperature()
+        green_blink(100)
+    except Exception as error:
+        red_blink(1000)
+        print("Couldn find pyranometer")
+        pass
+    wdt.feed()
 
-except Exception as error:
-    print(error)
-    pycom.rgbled(0xff0000) # now make the LED light up red in colour
-    print(error)
-    time.sleep(5.0)  # Wait 5 senconds with the red LED
-    pycom.rgbled(0x000000) # now make the LED light up red in colour
-    print("Couldn find pyranometer")
-    pass
-wdt.feed()
-
-print("Setting up battery sensing...")
 # Battery sensing
 adc = machine.ADC(0)
 batt = adc.channel(pin='P16', attn=3)
 
 float_values[13] = (batt.value()/4096.0)*354.8/31.6
-print(float_values[13])
+print("Battery: {}V".format(float_values[13]))
 
 # create a LoRa socket
 s = socket.socket(socket.AF_LORA, socket.SOCK_RAW)
@@ -313,6 +316,13 @@ pycom.rgbled(0x001000) # now make the LED light up green in colour
 # Payload is sent as byte array with 14*float32 (4 bytes each)
 # Total payload size is 56 bytes
 # Data structure is: Ts, To, Tair, RH, Patm, {ch0},{ch1},{ch2},{ch3},{ch4},{ch5}, Tsensor, Tsoil, Volt
+
+# Downlink messages:
+# * 1: Define duty cycle in seconds:  [01 LSB MSB]
+# * 2: Define air sensor type: [02 XX] See XX values in config.py
+# * 3: Send firmware version on port 1: [03]
+# * 4: Send I2C bus scan on port 1: [04]
+# * 5: Perform OTA update: [05 02 03]
 
 msg = bytearray(56)
 
@@ -337,10 +347,38 @@ while True:
                 # Sleep time command
                 my_config_dict["sleep_time"] = int.from_bytes(in_msg[1:3], 'little')
                 print("New sleep time {}s".format(my_config_dict["sleep_time"]))
+            elif in_msg[0] == 5:
+                if in_msg == bytes([0x05, 0x02, 0x03]):
+                    print("Performing OTA!")
+                    pycom.rgbled(0x000011)
+                    # Perform OTA
+                    try:
+                        ota.connect()
+                        ota.update()
+                    except Exception as ex:
+                        print(ex)
+        elif len(in_msg) == 2:
+            if in_msg[0] == 2:
+                # Select sensor type
+                my_config_dict["air_sensor"] = in_msg[1]
+                print("New sensor type: {}".format(my_config_dict["air_sensor"]))
+        elif len(in_msg) == 1:
+            if in_msg[0] == 3:
+                # Send version
+                print("Send version name...")
+                s.bind(1)
+                s.send(__version__ + " " + os.uname().release)
+                time.sleep(4)
+            elif in_msg[0] == 4:
+                # Send I2C scan
+                print("Send I2C scan")
+                s.bind(1)
+                debug_info = {'irt': scan_i2c(i2c_irt), 'air': scan_i2c(i2c_air)}
+                s.send("{}".format(debug_info))
+                time.sleep(4)
         save_config(my_config_dict)
-
-    #break
-    print("I'm going to sleep...")
     lora.nvram_save()
+    time.sleep(2)
+    print("I'm going to sleep...")
     pycom.rgbled(0x000000) # now make the LED light up green in colour
     machine.deepsleep(my_config_dict["sleep_time"]*1000)  # go to sleep for 5 minutes
