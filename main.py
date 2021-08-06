@@ -13,11 +13,11 @@ compatible with single-frequency gateways (NanoGateway)
 """
 
 __author__ = 'Jose A. Jimenez-Berni'
-__version__ = '0.2.3'
+__version__ = '0.3.0'
 __license__ = 'MIT'
 
 from network import LoRa
-from machine import I2C, RTC, Pin
+from machine import I2C, RTC, Pin, SD
 import os
 from OTA import WiFiOTA
 from sht30 import SHT30
@@ -92,6 +92,19 @@ def scan_i2c(i2c_bus):
     sensors=i2c_bus.scan()
     return sensors
 
+def log_to_SD():
+    t = rtc.now()
+    ts = '{:04d}/{:02d}/{:02d} {:02d}:{:02d}:{:02d}'.format(t[0], t[1], t[2], t[3], t[4], t[5])
+    stats = lora.stats()
+    print(stats)
+    try:
+        sd = SD()
+        os.mount(sd, '/sd')
+        print("Logging to: {}".format('/sd/{eui}.csv'.format(eui=config.DEV_EUI)))
+        with open('/sd/{eui}.csv'.format(eui=config.DEV_EUI), 'a') as output:
+            output.write(ts+",{counter},".format(counter=stats.tx_counter)+",".join(str(x) for x in float_values)+"\n")
+    except Exception as ex:
+        print(ex)
 
 # Give some time for degubbing
 time.sleep(2.5)
@@ -177,8 +190,8 @@ float_values = [-1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0
 
 print("Waking up I2C sensors...")
 # Init sensor on pins
-i2c_irt = I2C(0, I2C.MASTER, pins=('P22', 'P21'))
-i2c_air = I2C(1, I2C.MASTER, pins=('P20', 'P19'))
+i2c_irt = I2C(0, I2C.MASTER, pins=('P21', 'P22'))
+i2c_air = I2C(1, I2C.MASTER, pins=('P19', 'P20'))
 ow = OneWire(Pin('P23'))
 
 if DEBUG_MODE:
@@ -337,6 +350,7 @@ while True:
 
     wdt.feed()
     time.sleep(4)
+    log_to_SD()
     rx = s.recv(256)
     if rx:
         print("Got a packet from the cloud")
