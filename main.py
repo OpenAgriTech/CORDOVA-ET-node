@@ -4,7 +4,6 @@ The looger reads:
 * Ambient and object temperature on the MLX90614
 * Air temperature and humidity on the SHT3x
 * First DS18X20 temperature sensor on the OneWire channels
-* 6 spectral channels of the AS726X
 
 This version doesn't include frequencies and the defafult region is defined
 when programming the firmware on the Lopy4. Therefore this version is not
@@ -13,8 +12,10 @@ compatible with single-frequency gateways (NanoGateway)
 """
 
 __author__ = 'Jose A. Jimenez-Berni'
-__version__ = '0.3.0'
+__version__ = '0.3.2'
 __license__ = 'MIT'
+NODE_VERSION = 0x01
+PAYLOAD_VERSION = 0x01
 
 from network import LoRa
 from machine import I2C, RTC, Pin, SD
@@ -25,7 +26,6 @@ from BME280 import BME280, BME280_I2CADDR
 from onewire import DS18X20
 from onewire import OneWire
 from mlx90614 import MLX90614
-from AS726X import AS726X
 import socket
 import binascii
 import struct
@@ -104,7 +104,7 @@ def log_to_SD():
         with open('/sd/{eui}.csv'.format(eui=config.DEV_EUI), 'a') as output:
             output.write(ts+",{counter},".format(counter=stats.tx_counter)+",".join(str(x) for x in float_values)+"\n")
     except Exception as ex:
-        print(ex)
+        print("Error writing to SD: ", ex)
 
 # Give some time for degubbing
 time.sleep(2.5)
@@ -178,15 +178,14 @@ while not lora.has_joined():
         machine.deepsleep(60*1000)  # go to sleep for 1 minute
 
 print("Connected to LoRa")
-
 pycom.rgbled(0x000000) # now turn the LED off
 wdt.feed()
 lora.nvram_save()
 my_config_dict['lora_ok'] = True
 save_config(my_config_dict)
 
-# Data structure is: Ts, To, Tair, RH, Patm, Tsoil, {ch0},{ch1},{ch2},{ch3},{ch4},{ch5}, Tsensor, Volt
-float_values = [-1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0]
+# Data structure is: Ts, To, Tair, RH, Patm, Tsoil, Volt
+float_values = [-1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0]
 
 print("Waking up I2C sensors...")
 # Init sensor on pins
@@ -286,37 +285,19 @@ except Exception as error:
     print("Couldn't find OWD")
     float_values[5] = -100.0
 wdt.feed()
-### Pyranometer (only if not using SHT3x)
-if my_config_dict["air_sensor"] != config.SHT3x_single:
-    print("Waking up pyranometer...")
-    try:
-        sensor = AS726X(i2c=i2c_air, gain=2)
-        sensor_type = sensor.get_sensor_type()
-        time.sleep(1)
-        print('Ready to read on wavelengths:')
-        print(sensor.get_wavelengths())
-        sensor.take_measurements()
-        float_values[6:12] = sensor.get_calibrated_values()
-        float_values[12] = sensor.get_temperature()
-        green_blink(100)
-    except Exception as error:
-        red_blink(1000)
-        print("Couldn find pyranometer")
-        pass
-    wdt.feed()
 
 # Battery sensing
 adc = machine.ADC(0)
 batt = adc.channel(pin='P16', attn=3)
 
-float_values[13] = (batt.value()/4096.0)*354.8/31.6
-print("Battery: {}V".format(float_values[13]))
+float_values[6] = (batt.value()/4096.0)*354.8/31.6
+print("Battery: {}V".format(float_values[6]))
 
 # create a LoRa socket
 s = socket.socket(socket.AF_LORA, socket.SOCK_RAW)
 
 # set the LoRaWAN data rate
-s.setsockopt(socket.SOL_LORA, socket.SO_DR, 5)
+s.setsockopt(socket.SOL_LORA, socket.SO_DR, 0)
 
 # make the socket blocking
 s.setblocking(False)
@@ -326,9 +307,9 @@ pycom.rgbled(0x001000) # now make the LED light up green in colour
 
 #time.sleep(5.0)
 
-# Payload is sent as byte array with 14*float32 (4 bytes each)
-# Total payload size is 56 bytes
-# Data structure is: Ts, To, Tair, RH, Patm, {ch0},{ch1},{ch2},{ch3},{ch4},{ch5}, Tsensor, Tsoil, Volt
+# Payload is sent as byte array with 4 bytes + 7*float32 (4 bytes each)
+# Total payload size is 32 bytes
+# Data structure is: NODE_VERSION, PAYLOAD_VERSION, 2 BYTES, Ts, To, Tair, RH, Patm, Tsoil, Volt
 
 # Downlink messages:
 # * 1: Define duty cycle in seconds:  [01 LSB MSB]
@@ -337,19 +318,21 @@ pycom.rgbled(0x001000) # now make the LED light up green in colour
 # * 4: Send I2C bus scan on port 1: [04]
 # * 5: Perform OTA update: [05 02 03]
 
-msg = bytearray(56)
+msg = bytearray(32)
 
 while True:
     try:
         print(float_values)
-        msg = bytearray(struct.pack('14f', *float_values))
+        msg = bytearray(struct.pack('2B7f', NODE_VERSION, PAYLOAD_VERSION, *float_values))
+        s.setblocking(True)
         s.send(msg)
+        s.setblocking(False)
     except Exception as error:
-        print(error)
+        print("Error sending packet: ", error)
         pass
 
     wdt.feed()
-    time.sleep(4)
+    #time.sleep(4)
     log_to_SD()
     rx = s.recv(256)
     if rx:
@@ -380,19 +363,22 @@ while True:
             if in_msg[0] == 3:
                 # Send version
                 print("Send version name...")
+                s.setblocking(True)
                 s.bind(1)
                 s.send(__version__ + " " + os.uname().release)
                 time.sleep(4)
             elif in_msg[0] == 4:
                 # Send I2C scan
                 print("Send I2C scan")
+                s.setblocking(True)
                 s.bind(1)
                 debug_info = {'irt': scan_i2c(i2c_irt), 'air': scan_i2c(i2c_air)}
                 s.send("{}".format(debug_info))
                 time.sleep(4)
         save_config(my_config_dict)
     lora.nvram_save()
-    time.sleep(2)
+    print("NV Save")
+    time.sleep(4)
     print("I'm going to sleep...")
     pycom.rgbled(0x000000) # now make the LED light up green in colour
     machine.deepsleep(my_config_dict["sleep_time"]*1000)  # go to sleep for 5 minutes
