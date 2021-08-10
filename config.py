@@ -4,9 +4,7 @@ New OTA parameters
 """
 
 # OTAA authentication params
-DEV_EUI = "XX"
-APP_EUI = "XX"
-APP_KEY = "XXXX"
+APP_EUI = "70B3D57ED001C537"
 
 # OTA Firmware Update parameters
 WIFI_SSID = "MeteoNet"

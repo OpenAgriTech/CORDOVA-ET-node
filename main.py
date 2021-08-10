@@ -12,12 +12,13 @@ compatible with single-frequency gateways (NanoGateway)
 """
 
 __author__ = 'Jose A. Jimenez-Berni'
-__version__ = '0.3.2'
+__version__ = '0.3.3'
 __license__ = 'MIT'
 NODE_VERSION = 0x01
 PAYLOAD_VERSION = 0x01
 
-from network import LoRa
+import network
+from network import LoRa, Sigfox, WLAN
 from machine import I2C, RTC, Pin, SD
 import os
 from OTA import WiFiOTA
@@ -27,7 +28,7 @@ from onewire import DS18X20
 from onewire import OneWire
 from mlx90614 import MLX90614
 import socket
-import binascii
+import ubinascii
 import struct
 import time
 import machine
@@ -50,26 +51,32 @@ print("CORDOVA-ET Node v{version}".format(version=__version__))
 print(os.uname().release)
 # Save battery by disabling the LED
 pycom.heartbeat(False)
-
+sigfox = Sigfox()
+# Initialize LoRa in LORAWAN mode.
+lora = LoRa(mode=LoRa.LORAWAN, rx_iq=True)
 
 # Define sleep time in seconds. Default is 1min, modify by downlink message.
 # This needs to be read from file since data is lost between reboots
-my_config_dict = {'sleep_time': 300, 'lora_ok': False, 'version': __version__,
-                  'air_sensor': config.SHT3x_single}
+factory_config_dict = {'sleep_time': 300, 'lora_ok': False, 'version': __version__,
+                  'air_sensor': config.SHT3x_single,
+                  'dev_eui': ubinascii.hexlify(lora.mac()).decode('ascii'),
+                  'app_eui': config.APP_EUI,
+                  'app_key': ubinascii.hexlify(ubinascii.unhexlify((ubinascii.hexlify(sigfox.mac())+"FFFE"+ubinascii.hexlify(machine.unique_id()).decode('ascii')))).decode('ascii'),
+                  }
 
 def save_config(my_config_dict):
     with open("/flash/my_config.json", 'w') as conf_file:
         conf_file.write(json.dumps(my_config_dict))
 
 
-def load_config(my_config_dict):
+def load_config():
     try:
         with open("/flash/my_config.json", 'r') as conf_file:
             my_config_dict =  json.loads(conf_file.read())
     except Exception as ex:
         print("Config file not found")
         with open("/flash/my_config.json", 'w') as conf_file:
-            conf_file.write(json.dumps(my_config_dict))
+            conf_file.write(json.dumps(factory_config_dict))
 
     return my_config_dict
 
@@ -116,17 +123,27 @@ ota = WiFiOTA(WIFI_SSID,
               8000)  # Update server port
 
 
+# Init sensor on pins
+i2c_irt = I2C(0, I2C.MASTER, pins=('P21', 'P22'))
+i2c_air = I2C(1, I2C.MASTER, pins=('P19', 'P20'))
+ow = OneWire(Pin('P11'))
+p_in = Pin('P18', mode=Pin.IN, pull=Pin.PULL_UP)
+
+if DEBUG_MODE:
+    debug_info = {'i2c_irt': scan_i2c(i2c_irt), 'i2c_air': scan_i2c(i2c_air)}
+    print(debug_info)
+
 # If we have a new software version, we reset the settings
 
-config_dict = load_config(my_config_dict)
+config_dict = load_config()
 if 'version' not in config_dict:
     print("New version found...")
-    save_config(my_config_dict)
+    save_config(factory_config_dict)
 elif config_dict['version'] != __version__:
     print("New version found...")
-    save_config(my_config_dict)
-else:
-    my_config_dict = config_dict
+    save_config(factory_config_dict)
+
+my_config_dict = load_config()
 
 
 wake_s = machine.wake_reason()
@@ -138,13 +155,74 @@ if reset_s==machine.WDT_RESET:
 print(wake_s)
 print(reset_s)
 
-# Initialize LoRa in LORAWAN mode.
-lora = LoRa(mode=LoRa.LORAWAN)
 # create an OTA authentication params for this node
-dev_eui = binascii.unhexlify(config.DEV_EUI.replace(' ',''))
-app_eui = binascii.unhexlify(config.APP_EUI.replace(' ',''))
-app_key = binascii.unhexlify(config.APP_KEY.replace(' ',''))
+dev_eui = ubinascii.unhexlify(my_config_dict['dev_eui'].replace(' ',''))
+app_eui = ubinascii.unhexlify(my_config_dict['app_eui'].replace(' ',''))
+app_key = ubinascii.unhexlify(my_config_dict['app_key'].replace(' ',''))
+print("LoRaWAN information for registering with TTN:")
+print("============================================")
+print("DevEUI: %s" % (ubinascii.hexlify(lora.mac()).decode('ascii')))
+print("AppEUI: %s" % (ubinascii.hexlify(app_eui)))
+print("AppKey: %s" % (ubinascii.hexlify(app_key)))
+print()
 
+if p_in()==0:
+    print("Entering Config Mode. Commands (case sensitive):")
+    print("g: clear config")
+    print("r: reset")
+    print("o: perform OTA update")
+    print("l: reset LoRaWAN session")
+    print("t: print current time")
+    print("TYYYY/MM/DD HH:MM:SS set current time (UTC). E.g. T20210801 10:05:00")
+    pycom.rgbled(0x000010) # now make the LED light up blue in colour
+    wlan = WLAN(mode=WLAN.AP, ssid="lopy4")
+    server = network.Server()
+    server.deinit() # disable the server
+    # enable the server again with new settings
+    tmp_str = ""
+    in_key = None
+    server.init(login=('uco', 'ias_csic'), timeout=600)
+    while p_in()==0:
+        wdt.feed()
+        time.sleep(1)
+        char = uart.read(1)
+        if char is not None:
+            if char == b'\r':
+                in_key = tmp_str
+                tmp_str = ""
+            else:
+              tmp_str += char.decode("utf-8")
+        if in_key is not None:
+            print(in_key)
+        if in_key == 'g':
+            print("Clear configuration")
+            config_dict = factory_config_dict
+            save_config(config_dict)
+            machine.reset()
+        elif in_key == 'r':
+            print("Reset")
+            machine.reset()
+        elif in_key == 'l':
+            print("Reset LoRaWAN")
+            my_config_dict['lora_ok'] = False
+            save_config(my_config_dict)
+            machine.reset()
+        elif in_key == 't':
+            t = rtc.now()
+            ts = '{:04d}/{:02d}/{:02d} {:02d}:{:02d}:{:02d}'.format(t[0], t[1], t[2], t[3], t[4], t[5])
+            print("Current time: ", ts)
+        elif in_key == 'o':
+            print("Performing OTA")
+            try:
+                ota.connect()
+                ota.update()
+            except Exception as ex:
+                print(ex)
+        in_key = None
+    server.deinit()
+    wlan.deinit()
+    pycom.rgbled(0x00000)
+    print("Exit Config Mode")
 
 if wake_s[0] == machine.PIN_WAKE:
     print("Pin wake up")
@@ -188,15 +266,6 @@ save_config(my_config_dict)
 float_values = [-1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0]
 
 print("Waking up I2C sensors...")
-# Init sensor on pins
-i2c_irt = I2C(0, I2C.MASTER, pins=('P21', 'P22'))
-i2c_air = I2C(1, I2C.MASTER, pins=('P19', 'P20'))
-ow = OneWire(Pin('P23'))
-
-if DEBUG_MODE:
-    debug_info = {'i2c_irt': scan_i2c(i2c_irt), 'i2c_air': scan_i2c(i2c_air)}
-    print(debug_info)
-
 ### IRT Sensor
 irt = None
 try:
