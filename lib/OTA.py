@@ -84,7 +84,7 @@ class OTA():
         # `Delete` files no longer required
         # This actually makes a backup of the files incase we need to roll back
         for f in manifest['delete']:
-            self.delete_file(f)
+            self.delete_file('/'+f)
 
         # Flash firmware
         if "firmware" in manifest:
@@ -103,8 +103,9 @@ class OTA():
         machine.reset()
 
     def get_file(self, f):
+        print("Getting file: ", f)
         new_path = "/flash{}.new".format(f['dst_path'])
-
+        print("New path: ", new_path)
         # If a .new file exists from a previously failed update delete it
         try:
             os.remove(new_path)
@@ -125,6 +126,7 @@ class OTA():
             raise Exception(msg)
 
     def backup_file(self, f):
+        print("Backup: ", f)
         bak_path = "/flash{}.bak".format(f['dst_path'])
         dest_path = "/flash{}".format(f['dst_path'])
 
@@ -139,6 +141,7 @@ class OTA():
         os.rename(dest_path, bak_path)
 
     def delete_file(self, f):
+        print("Delete: ", f)
         bak_path = "/flash{}.bak_del".format(f)
         dest_path = "/flash{}".format(f)
 
@@ -149,6 +152,7 @@ class OTA():
             pass  # There isnt a previous delete backup
 
         # Backup current file
+        print("Rename", dest_path, bak_path)
         os.rename(dest_path, bak_path)
 
     def write_firmware(self, f):
@@ -166,6 +170,7 @@ class WiFiOTA(OTA):
         self.port = port
 
     def connect(self):
+        print("Connecting to ", self.SSID)
         self.wlan = network.WLAN(mode=network.WLAN.STA)
         if not self.wlan.isconnected() or self.wlan.ssid() != self.SSID:
             for net in self.wlan.scan():
@@ -174,6 +179,7 @@ class WiFiOTA(OTA):
                                                        self.password))
                     while not self.wlan.isconnected():
                         machine.idle()  # save power while waiting
+                    print("Connected to ", self.SSID)
                     break
             else:
                 raise Exception("Cannot find network '{}'".format(self.SSID))
