@@ -1,7 +1,16 @@
 """
-Config file. Edit these keys and replace with the values from TTN
-New OTA parameters
+Config file.
+Edit these parameters according to your node hardware and settings
 """
+# Supported node versions
+# 0x01: Original boards without SD card (green and black)
+# 0x02: Pyranometer version of the node using boards v3.x
+# 0x03: Boards version v3.x with SD card (black)
+
+NODE_VERSION = 0x03
+
+#Enable debug mode for extra information on serial terminal
+DEBUG_MODE = True
 
 # OTAA authentication params
 APP_EUI = "70B3D57ED001C537"
@@ -10,9 +19,3 @@ APP_EUI = "70B3D57ED001C537"
 WIFI_SSID = "MeteoNet"
 WIFI_PW = "ChangeMe"
 SERVER_IP = "161.111.157.183"
-
-# Supported air temperature and humidity sensors
-NONE = const(0)
-BME280 = const(1)
-SHT3x = const(2)
-SHT3x_single = const(3)
