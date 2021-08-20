@@ -533,11 +533,12 @@ except Exception as ex:
 
 # Downlink messages:
 # * 1: Define duty cycle in seconds:  [01 LSB MSB]
-# * 2: Define air sensor type: [02 XX] See XX values in config.py
+# * 2: Define node type: [02 XX] See XX values in config.py
 # * 3: Send firmware version on port 1: [03]
 # * 4: Send I2C bus scan on port 1: [04]
 # * 5: Perform OTA update: [05 02 03]
 # * 6: Timesync message
+# * 7: Define air sensor type: [07 XX] # 0: None, 1: BME280, 2: SHT3x old, 3: SHT3x Rika
 
 msg = bytearray(32)
 
