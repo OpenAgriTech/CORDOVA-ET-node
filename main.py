@@ -343,7 +343,7 @@ print("AppEUI: %s" % (ubinascii.hexlify(app_eui).decode('ascii')))
 print("AppKey: %s" % (ubinascii.hexlify(app_key).decode('ascii')))
 print()
 
-if p_in()==0:
+if (p_in()==0) and (my_config_dict['node_version']!=0x01):
     print("CORDOVA-ET Node v{version} Type: {node_type}".format(version=__version__, node_type=my_config_dict['node_version']))
 
     print("Entering Config Mode. Commands (case sensitive):")
