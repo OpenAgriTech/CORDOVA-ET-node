@@ -9,8 +9,10 @@ uart = UART(0, 115200)
 os.dupterm(uart)
 
 rtc = machine.RTC()
-wdt = WDT(timeout=50000)
+
 
 wlan = WLAN() # get current object, without changing the mode
 wlan.deinit()
+
+wdt = WDT(timeout=50000)
 wdt.feed()
