@@ -12,7 +12,7 @@ compatible with single-frequency gateways (NanoGateway)
 """
 
 __author__ = 'Jose A. Jimenez-Berni'
-__version__ = '0.3.5'
+__version__ = '0.4.1'
 __license__ = 'MIT'
 
 import network
@@ -54,6 +54,9 @@ MAX_JOIN_RETRY = 100  # Max number of LoRa join before going to deep sleep
 
 print("CORDOVA-ET Node v{version}".format(version=__version__))
 print(os.uname().release)
+t = rtc.now()
+ts = '{:04d}/{:02d}/{:02d} {:02d}:{:02d}:{:02d}'.format(t[0], t[1], t[2], t[3], t[4], t[5])
+print("Current time: ", ts)
 # Save battery by disabling the LED
 pycom.heartbeat(False)
 sigfox = Sigfox()
@@ -326,7 +329,7 @@ if reset_s==machine.WDT_RESET:
     status_flag|=status.WDT_ERROR
 
 print(wake_s)
-print(reset_s)
+print()
 
 # create an OTA authentication params for this node
 dev_eui = ubinascii.unhexlify(my_config_dict['dev_eui'].replace(' ',''))
@@ -353,6 +356,7 @@ if p_in()==0:
     print("TYYYY/MM/DD HH:MM:SS set current time (UTC). E.g. T20210801 10:05:00")
     print("VXX: set the node version, where XX is the version (01,02,03). E.g. V02 to set to pyranometer")
     print("s: send timesync message")
+    print("CXXXX: Set the measurement cycle in seconds. E.g. C{cycle}".format(cycle=my_config_dict['sleep_time']))
     print()
     print("Don't forget the press enter after the command")
     pycom.rgbled(0x000010) # now make the LED light up blue in colour
@@ -410,6 +414,21 @@ if p_in()==0:
                     print("Current time: ", ts)
                 except Exception as ex:
                     print("Error parsing. Format should be: TYYYY/MM/DD HH:MM:SS")
+        elif in_key.startswith('C'):
+            if len(in_key) < 3:
+                print("Wrong format, it should be: CY")
+            else:
+                try:
+                    sleep_time = int(in_key[1:])
+                    if sleep_time < 60:
+                        print("Minimum cycle time is 60s. Try again")
+                    else:
+                        my_config_dict['sleep_time'] = sleep_time
+                        print("New cycle time set to: {sleep_time} seconds.".format(sleep_time=sleep_time))
+                        save_config(my_config_dict)
+
+                except Exception as ex:
+                    print("Wrong format, it should be: VXX, where XX is the version (01,02,03)")
         elif in_key == 's':
             print("Send time sync")
             send_timesync()
@@ -418,11 +437,15 @@ if p_in()==0:
             if len(in_key) != 3:
                 print("Wrong format, it should be: VXX, where XX is the version (01,02,03)")
             else:
-                my_config_dict['node_version'] = int(in_key[1:3])
-                save_config(my_config_dict)
-                print("Set node type to: ", int(in_key[1:3]))
-                wdt.init(0)
-                sys.exit()
+                try:
+                    my_config_dict['node_version'] = int(in_key[1:3])
+                    save_config(my_config_dict)
+                    print("Set node type to: {node_version}".format(node_version=int(in_key[1:3])))
+                    time.sleep(1)
+                    wdt.init(0)
+                    sys.exit()
+                except Exception as ex:
+                    print("Wrong format, it should be: VXX, where XX is the version (01,02,03)")
         elif in_key == 'o':
             print("Performing OTA")
             try:
@@ -431,6 +454,7 @@ if p_in()==0:
             except Exception as ex:
                 print(ex)
         in_key = None
+        time.sleep(0.1)
     server.deinit()
     wlan.deinit()
     pycom.rgbled(0x00000)
@@ -475,8 +499,8 @@ my_config_dict['lora_ok'] = True
 save_config(my_config_dict)
 
 # Check for time every 24h
-if (time.time() - my_config_dict['sync_timestamp']) > 3600:
-    print("Time diff: ", time.time() , my_config_dict['sync_timestamp'])
+if (time.time() - my_config_dict['sync_timestamp']) > 4*3600:
+    print("Time diff: ", time.time() , my_config_dict['sync_timestamp'], time.time() - my_config_dict['sync_timestamp'])
     send_timesync()
 elif time.time() < 1e3:
     print("Current time: ", time.time())
@@ -520,7 +544,6 @@ msg = bytearray(32)
 while True:
     try:
         print(float_values)
-        log_to_SD()
         msg = bytearray(struct.pack('2B7f', my_config_dict['node_version'], PAYLOAD_VERSION, *float_values))
         s.setblocking(True)
         s.send(msg)
@@ -528,7 +551,7 @@ while True:
     except Exception as error:
         print("Error sending packet: ", error)
         pass
-
+    log_to_SD()
     wdt.feed()
     #time.sleep(4)
     try:
@@ -552,23 +575,30 @@ while True:
                             ota.update()
                         except Exception as ex:
                             print(ex)
+                            pycom.rgbled(0x110000)
                 elif in_msg[0] == 6:
                     if len(in_msg) == 9:
                         print("Got time sync!")
-                        ts_count, ts_offset = struct.unpack("2I", bytearray(in_msg[1:]))
+                        ts_count, ts_offset = struct.unpack("Ii", bytearray(in_msg[1:]))
                         if ts_count == my_config_dict['sync_counter']:
                             rtc.init(time.gmtime(time.time()+ts_offset))
+                            t = rtc.now()
+                            print("New time is: ", rtc.now() , time.time(), ts_offset)
                             my_config_dict['sync_timestamp'] = time.time()
-                            print("New time is: ", rtc.now())
                             save_config(my_config_dict)
                         else:
                             print("Out of sync message, got {ts_count} should be {counter}".format(ts_count=ts_count, counter=my_config_dict['sync_counter']))
 
             elif len(in_msg) == 2:
                 if in_msg[0] == 2:
-                    # Select sensor type
-                    my_config_dict["air_sensor"] = in_msg[1]
-                    print("New sensor type: {}".format(my_config_dict["air_sensor"]))
+                    # Select node type
+                    my_config_dict['node_version'] = in_msg[1]
+                    print("New sensor type: {}".format(my_config_dict['node_version']))
+            elif len(in_msg) == 2:
+                if in_msg[0] == 7:
+                    # Select air sensor type
+                    my_config_dict['air_sensor'] = in_msg[1]
+                    print("New sensor type: {}".format(my_config_dict['air_sensor']))
             elif len(in_msg) == 1:
                 if in_msg[0] == 3:
                     # Send version
