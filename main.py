@@ -12,7 +12,7 @@ compatible with single-frequency gateways (NanoGateway)
 """
 
 __author__ = 'Jose A. Jimenez-Berni'
-__version__ = '0.4.1'
+__version__ = '0.4.2'
 __license__ = 'MIT'
 
 import network
@@ -180,6 +180,12 @@ def do_measurements():
             rgb_blink(100, 0x13f2ab)
             print("Couldn't find ADC")
             print(ex)
+            float_values[0] = -1.0
+            float_values[1] = -1.0
+            float_values[2] = -1.0
+            float_values[3] = -1.0
+            float_values[4] = -1.0
+            float_values[5] = 0.0
 
 
     else:
@@ -197,6 +203,8 @@ def do_measurements():
             red_blink(1000)
             irt = None
             print("Couldn't find IRT")
+            float_values[0] = -1.0
+            float_values[1] = -1.0
         wdt.feed()
         ### Air sensor
         if my_config_dict["air_sensor"] == NONE:
@@ -217,6 +225,9 @@ def do_measurements():
             except Exception as error:
                 red_blink(1000)
                 print("Couldn't find BME")
+                float_values[2] = -1.0
+                float_values[3] = -1.0
+                float_values[4] = -1.0
 
         elif my_config_dict["air_sensor"] == SHT3x:
             sht30 = None
@@ -230,6 +241,9 @@ def do_measurements():
             except Exception as error:
                 red_blink(1000)
                 print("Couldn't find SHT30")
+                float_values[2] = -1.0
+                float_values[3] = -1.0
+                float_values[4] = 0.0
 
         elif my_config_dict["air_sensor"] == SHT3x_single:
             sht30 = None
@@ -243,6 +257,9 @@ def do_measurements():
             except Exception as error:
                 rgb_blink(100, 0x13f2ab)
                 print("Couldn't find SHT30")
+                float_values[2] = -1.0
+                float_values[3] = -1.0
+                float_values[4] = 0.0
 
         else:
             print("Sensor not supported")
@@ -264,6 +281,7 @@ def do_measurements():
             else:
                 print("Soil temp not found")
                 red_blink(1000)
+                float_values[5] = -1.0
                 #time.sleep(1)
         except Exception as error:
             print(error)
@@ -471,6 +489,8 @@ elif wake_s[0] == machine.RTC_WAKE:
 elif my_config_dict['lora_ok']:
     print("Have joined before, no need to rejoin")
     lora.nvram_restore()
+    if not lora.has_joined():
+        lora.join(activation=LoRa.OTAA, auth=(dev_eui, app_eui, app_key), timeout=0, dr= 0)
 
 else:  # deepsleep.POWER_ON_WAKE:
     print("Power ON reset")
