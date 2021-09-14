@@ -1,6 +1,12 @@
 """
 Config file.
 Edit these parameters according to your node hardware and settings
+
+*** VERY IMPORTANT ***
+
+==>> MAKE SURE TO CHANGE THE WIFI PASSWORD ACCORDINGLY <<==
+
+*****************************
 """
 # Supported node versions
 # 0x01: Original boards without SD card (green and black)

@@ -144,6 +144,7 @@ def send_timesync():
     except Exception as ex:
         print("Error doing time sync: ", ex)
 
+
 def log_to_SD():
     t = rtc.now()
     ts = '{:04d}/{:02d}/{:02d} {:02d}:{:02d}:{:02d}'.format(t[0], t[1], t[2], t[3], t[4], t[5])
@@ -157,6 +158,34 @@ def log_to_SD():
             output.write(ts+",{counter},".format(counter=stats.tx_counter)+",".join(str(x) for x in float_values)+"\n")
     except Exception as ex:
         print("Error writing to SD: ", ex)
+
+
+def print_help():
+    print("Available commands (case sensitive):")
+    print("h: print this help")
+    print("p: print LoRaWAN keys")
+    print("m: test all measurements")
+    print("g: clear config")
+    print("r: hard reset (looses time)")
+    print("o: perform OTA update")
+    print("l: reset LoRaWAN session")
+    print("t: print current time")
+    print("TYYYY/MM/DD HH:MM:SS set current time (UTC). E.g. T20210801 10:05:00")
+    print("VXX: set the node version, where XX is the version (01,02,03). E.g. V02 to set to pyranometer")
+    print("s: send timesync message")
+    print("CXXXX: Set the measurement cycle in seconds. E.g. C{cycle}".format(cycle=my_config_dict['sleep_time']))
+    print()
+    print("Don't forget the press enter after the command")
+
+
+def print_lorawan():
+    print("LoRaWAN information for registering with TTN:")
+    print("============================================")
+    print("DevEUI: %s" % (ubinascii.hexlify(dev_eui).decode('ascii')))
+    print("AppEUI: %s" % (ubinascii.hexlify(app_eui).decode('ascii')))
+    print("AppKey: %s" % (ubinascii.hexlify(app_key).decode('ascii')))
+    print()
+
 
 def do_measurements():
 
@@ -270,7 +299,12 @@ def do_measurements():
         try:
             if len(ow.scan()) > 0:
                 print("Waking OWD...OK")
-                print("Devices P11: {}".format(ow.scan()))
+                ow_devices = ow.scan()
+                if len(ow_devices) > 0:
+                    ow_id = ubinascii.hexlify(ow_devices[0]).decode('ascii')
+                else:
+                    ow_id = "None"
+                print("OW ID: {}".format(ow_id))
                 temp = DS18X20(ow)
                 temp.start_convertion()
                 time.sleep(1)
@@ -304,8 +338,9 @@ time.sleep(2.5)
 # Setup OTA
 ota = WiFiOTA(WIFI_SSID,
               WIFI_PW,
-              SERVER_IP,  # Update server address
-              8000)  # Update server port
+              SERVER_IP,    # Update server address
+              8000,         # Update server port
+              wdt)          # WDT for long transfers
 
 
 
@@ -354,29 +389,13 @@ dev_eui = ubinascii.unhexlify(my_config_dict['dev_eui'].replace(' ',''))
 app_eui = ubinascii.unhexlify(my_config_dict['app_eui'].replace(' ',''))
 app_key = ubinascii.unhexlify(my_config_dict['app_key'].replace(' ',''))
 
-print("LoRaWAN information for registering with TTN:")
-print("============================================")
-print("DevEUI: %s" % (ubinascii.hexlify(lora.mac()).decode('ascii')))
-print("AppEUI: %s" % (ubinascii.hexlify(app_eui).decode('ascii')))
-print("AppKey: %s" % (ubinascii.hexlify(app_key).decode('ascii')))
-print()
+print_lorawan()
 
 if (p_in()==0) and (my_config_dict['node_version']!=0x01):
     print("CORDOVA-ET Node v{version} Type: {node_type}".format(version=__version__, node_type=my_config_dict['node_version']))
 
-    print("Entering Config Mode. Commands (case sensitive):")
-    print("m: test all measurements")
-    print("g: clear config")
-    print("r: hard reset (looses time)")
-    print("o: perform OTA update")
-    print("l: reset LoRaWAN session")
-    print("t: print current time")
-    print("TYYYY/MM/DD HH:MM:SS set current time (UTC). E.g. T20210801 10:05:00")
-    print("VXX: set the node version, where XX is the version (01,02,03). E.g. V02 to set to pyranometer")
-    print("s: send timesync message")
-    print("CXXXX: Set the measurement cycle in seconds. E.g. C{cycle}".format(cycle=my_config_dict['sleep_time']))
-    print()
-    print("Don't forget the press enter after the command")
+    print("Entering Config Mode.")
+    print_help()
     pycom.rgbled(0x000010) # now make the LED light up blue in colour
     wlan = WLAN(mode=WLAN.AP, ssid="CET-"+my_config_dict['dev_eui'][-4:])
     server = network.Server()
@@ -385,6 +404,7 @@ if (p_in()==0) and (my_config_dict['node_version']!=0x01):
     tmp_str = ""
     in_key = None
     server.init(login=('uco', 'ias_csic'), timeout=600)
+    print(">>", end='')
     while p_in()==0:
         wdt.feed()
         char = uart.read(1)
@@ -392,6 +412,11 @@ if (p_in()==0) and (my_config_dict['node_version']!=0x01):
             if char == b'\r':
                 in_key = tmp_str
                 tmp_str = ""
+            elif char == b'\x7f':
+                if len(tmp_str)>0:
+                    tmp_str = tmp_str[:-1]
+                    print('\b \b', end='')
+                    #print('>>'+tmp_str, end='\r')
             else:
               tmp_str += char.decode("utf-8")
               print(char.decode("utf-8"), end='')
@@ -402,7 +427,14 @@ if (p_in()==0) and (my_config_dict['node_version']!=0x01):
         if in_key == 'm':
             do_measurements()
             print(float_values)
-        if in_key == 'g':
+            print(">>", end='')
+        elif in_key == 'h':
+            print_help()
+            print(">>", end='')
+        elif in_key == 'p':
+            print_lorawan()
+            print(">>", end='')
+        elif in_key == 'g':
             print("Clear configuration")
             config_dict = factory_config_dict
             save_config(config_dict)
@@ -421,9 +453,11 @@ if (p_in()==0) and (my_config_dict['node_version']!=0x01):
             t = rtc.now()
             ts = '{:04d}/{:02d}/{:02d} {:02d}:{:02d}:{:02d}'.format(t[0], t[1], t[2], t[3], t[4], t[5])
             print("Current time: ", ts)
+            print(">>", end='')
         elif in_key.startswith('T'):
             if len(in_key) != 20:
                 print("Wrong format, it should be: TYYYY/MM/DD HH:MM:SS")
+                print(">>", end='')
             else:
                 try:
                     rtc.init((int(in_key[1:5]), int(in_key[6:8]), int(in_key[9:11]), int(in_key[12:14]), int(in_key[15:17]), int(in_key[18:19])))
@@ -432,6 +466,7 @@ if (p_in()==0) and (my_config_dict['node_version']!=0x01):
                     print("Current time: ", ts)
                 except Exception as ex:
                     print("Error parsing. Format should be: TYYYY/MM/DD HH:MM:SS")
+            print(">>", end='')
         elif in_key.startswith('C'):
             if len(in_key) < 3:
                 print("Wrong format, it should be: CY")
@@ -447,23 +482,32 @@ if (p_in()==0) and (my_config_dict['node_version']!=0x01):
 
                 except Exception as ex:
                     print("Wrong format, it should be: VXX, where XX is the version (01,02,03)")
+            print(">>", end='')
         elif in_key == 's':
             print("Send time sync")
             send_timesync()
+            print(">>", end='')
 
         elif in_key.startswith('V'):
             if len(in_key) != 3:
                 print("Wrong format, it should be: VXX, where XX is the version (01,02,03)")
+                print(">>", end='')
             else:
                 try:
-                    my_config_dict['node_version'] = int(in_key[1:3])
-                    save_config(my_config_dict)
-                    print("Set node type to: {node_version}".format(node_version=int(in_key[1:3])))
-                    time.sleep(1)
-                    wdt.init(0)
-                    sys.exit()
+                    node_type = int(in_key[1:3])
+                    if (node_type>0) and (node_type<=3):
+                        my_config_dict['node_version'] = node_type
+                        save_config(my_config_dict)
+                        print("Set node type to: {node_version}".format(node_version=int(in_key[1:3])))
+                        time.sleep(1)
+                        wdt.init(0)
+                        sys.exit()
+                    else:
+                        print("Wrong format, it should be: VXX, where XX is the version (01,02,03)")
+                        print(">>", end='')
                 except Exception as ex:
                     print("Wrong format, it should be: VXX, where XX is the version (01,02,03)")
+                    print(">>", end='')
         elif in_key == 'o':
             print("Performing OTA")
             try:
@@ -471,6 +515,9 @@ if (p_in()==0) and (my_config_dict['node_version']!=0x01):
                 ota.update()
             except Exception as ex:
                 print(ex)
+        else:
+            print("Unknown command")
+            print(">>", end='')
         in_key = None
         time.sleep(0.1)
     server.deinit()

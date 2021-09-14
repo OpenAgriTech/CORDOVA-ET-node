@@ -163,11 +163,12 @@ class OTA():
 
 
 class WiFiOTA(OTA):
-    def __init__(self, ssid, password, ip, port):
+    def __init__(self, ssid, password, ip, port, wdt=None):
         self.SSID = ssid
         self.password = password
         self.ip = ip
         self.port = port
+        self.wdt = wdt
 
     def connect(self):
         print("Connecting to ", self.SSID)
@@ -239,13 +240,18 @@ class WiFiOTA(OTA):
                         h.update(result)
 
                 result = s.recv(100)
+                print("#", end='')
+                if self.wdt is not None:
+                    self.wdt.feed()
 
             s.close()
+            print()
 
             if fp is not None:
                 fp.close()
             if firmware:
                 pycom.ota_finish()
+                print("Firmware upgrade complete!")
 
         except Exception as e:
             # Since only one hash operation is allowed at Once
