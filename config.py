@@ -8,6 +8,11 @@ Edit these parameters according to your node hardware and settings
 
 *****************************
 """
+# OTA Firmware Update parameters
+WIFI_SSID = "MeteoNet"
+WIFI_PW = "ChangeMe"
+SERVER_IP = "161.111.157.183"
+
 # Supported node versions
 # 0x01: Original boards without SD card (green and black)
 # 0x02: Pyranometer version of the node using boards v3.x
@@ -20,8 +25,3 @@ DEBUG_MODE = True
 
 # OTAA authentication params
 APP_EUI = "70B3D57ED001C537"
-
-# OTA Firmware Update parameters
-WIFI_SSID = "MeteoNet"
-WIFI_PW = "ChangeMe"
-SERVER_IP = "161.111.157.183"

@@ -45,9 +45,9 @@ class OneWire:
         pin(1) # half of the devices don't match CRC without this line
         i = machine.disable_irq()
         pin(0)
-        sleep_us(1)
+        #sleep_us(1)
         pin(1)
-        sleep_us(1)
+        #sleep_us(1)
         value = pin()
         enable_irq(i)
         sleep_us(40)
@@ -181,7 +181,7 @@ class DS18X20(object):
         """
         if (rom==None) and (len(self.roms)>0):
             rom=self.roms[0]
-        if rom!=None:    
+        if rom!=None:
             rom = rom or self.roms[0]
             ow = self.ow
             ow.reset()
@@ -197,7 +197,7 @@ class DS18X20(object):
             return None
         if (rom==None) and (len(self.roms)>0):
             rom=self.roms[0]
-        if rom==None:     
+        if rom==None:
             return None
         else:
             ow = self.ow
