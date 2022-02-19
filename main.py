@@ -12,7 +12,7 @@ compatible with single-frequency gateways (NanoGateway)
 """
 
 __author__ = 'Jose A. Jimenez-Berni'
-__version__ = '0.4.2'
+__version__ = '0.4.3'
 __license__ = 'MIT'
 
 import network
@@ -37,7 +37,7 @@ import json
 import status
 import sys
 
-from config import WIFI_SSID, WIFI_PW, SERVER_IP, NODE_VERSION, DEBUG_MODE
+from config import SERVER_IP, NODE_VERSION, DEBUG_MODE
 
 PAYLOAD_VERSION = 0x01
 # Supported air temperature and humidity sensors
@@ -71,7 +71,7 @@ factory_config_dict = {'sleep_time': 300, 'lora_ok': False, 'version': __version
                   'dev_eui': ubinascii.hexlify(lora.mac()).decode('ascii'),
                   'app_eui': config.APP_EUI,
                   'app_key': ubinascii.hexlify(ubinascii.unhexlify((ubinascii.hexlify(sigfox.mac())+"FFFE"+ubinascii.hexlify(machine.unique_id()).decode('ascii')))).decode('ascii'),
-                  }
+                  'wifi_ssid': config.WIFI_SSID, 'wifi_pw': config.WIFI_PW}
 
 # Data structure is: Ts, To, Tair, RH, Patm, Tsoil, Volt
 # For pyranometer board, in mV: channel_1, channel_2, channel_3, channel_4, channel_1*5.0, 0.0, Volt
@@ -195,6 +195,7 @@ def print_help():
     print("h: print this help")
     print("p: print LoRaWAN keys")
     print("m: test all measurements")
+    print("c: print config")
     print("g: clear config")
     print("r: hard reset (looses time)")
     print("o: perform OTA update")
@@ -364,6 +365,20 @@ def do_measurements():
     float_values[6] = (batt.value()/4096.0)*354.8/31.6
     print("Battery: {}V".format(float_values[6]))
 
+
+# Downlink messages:
+# * 1: Define duty cycle in seconds:  [01 LSB MSB]
+# * 2: Define node type: [02 XX] See XX values in config.py
+# * 3: Send firmware version on port 1: [03]
+# * 4: Send I2C bus scan on port 1: [04]
+# * 5: Perform OTA update: [05 02 03]
+# * 6: Timesync message
+# * 7: Define air sensor type: [07 XX] # 0: None, 1: BME280, 2: SHT3x old, 3: SHT3x Rika
+# * 8: Reset LoRaWAN session and force to join again: [08]
+# * 9: Reset to factory defaults: [09]
+# * A: Set WiFi Credentials: [10 XXXXX+YYYY]: XXXXX is the WiFi SSID, YYYY is the password
+#       Both encoded in Hex strings. See: https://string-functions.com/string-hex.aspx
+
 def parse_incoming_msg(s):
     try:
         rx = s.recv(256)
@@ -399,7 +414,17 @@ def parse_incoming_msg(s):
                             save_config(my_config_dict)
                         else:
                             print("Out of sync message, got {ts_count} should be {counter}".format(ts_count=ts_count, counter=my_config_dict['sync_counter']))
-
+                elif in_msg[0] == 0x0a:
+                    # Set WiFi Credentials
+                    print("WiFi Settings")
+                    try:
+                        wifi_ssid, wifi_pw = in_msg[1:].decode('utf-8').split('+')
+                        my_config_dict['wifi_ssid'] = wifi_ssid
+                        my_config_dict['wifi_pw'] = wifi_pw
+                        print("New settings: {},{}".format(wifi_ssid, wifi_pw))
+                        save_config(my_config_dict)
+                    except Exception as ex:
+                        print("Error parsing WiFi Credentials: ", ex)
             elif len(in_msg) == 2:
                 if in_msg[0] == 2:
                     # Select node type
@@ -444,16 +469,7 @@ def parse_incoming_msg(s):
 
 
 # Give some time for degubbing
-time.sleep(2.5)
-
-# Setup OTA
-ota = WiFiOTA(WIFI_SSID,
-              WIFI_PW,
-              SERVER_IP,    # Update server address
-              8000,         # Update server port
-              wdt)          # WDT for long transfers
-
-
+#time.sleep(2.5)
 
 
 p_in = Pin('P18', mode=Pin.IN, pull=Pin.PULL_UP)
@@ -470,6 +486,12 @@ elif config_dict['version'] != __version__:
 
 my_config_dict = load_config()
 
+# Setup OTA
+ota = WiFiOTA(config_dict['wifi_ssid'],
+              config_dict['wifi_pw'],
+              SERVER_IP,    # Update server address
+              8000,         # Update server port
+              wdt)          # WDT for long transfers
 
 # Init sensor on pins according to nde version
 if my_config_dict['node_version']==0x01:
@@ -549,6 +571,10 @@ if (p_in()==0) and (my_config_dict['node_version']!=0x01):
             print(">>", end='')
         elif in_key == 'p':
             print_lorawan()
+            print(">>", end='')
+        elif in_key == 'c':
+            print("Current configuration")
+            print(my_config_dict)
             print(">>", end='')
         elif in_key == 'g':
             print("Clear configuration")
@@ -719,16 +745,6 @@ except Exception as ex:
 # Total payload size is 32 bytes
 # Data structure is: NODE_VERSION, PAYLOAD_VERSION, 2 BYTES, Ts, To, Tair, RH, Patm, Tsoil, Volt
 
-# Downlink messages:
-# * 1: Define duty cycle in seconds:  [01 LSB MSB]
-# * 2: Define node type: [02 XX] See XX values in config.py
-# * 3: Send firmware version on port 1: [03]
-# * 4: Send I2C bus scan on port 1: [04]
-# * 5: Perform OTA update: [05 02 03]
-# * 6: Timesync message
-# * 7: Define air sensor type: [07 XX] # 0: None, 1: BME280, 2: SHT3x old, 3: SHT3x Rika
-# * 8: Reset LoRaWAN session and force to join again: [08]
-# * 9: Reset to factory defaults: [09]
 
 msg = bytearray(32)
 
