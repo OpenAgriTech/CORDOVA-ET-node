@@ -121,6 +121,34 @@ def scan_i2c(i2c_bus):
     sensors=i2c_bus.scan()
     return sensors
 
+
+def join_lora():
+    print("Joining LoRa...")
+    # join a network using OTAA
+    lora.join(activation=LoRa.OTAA, auth=(dev_eui, app_eui, app_key), timeout=0)
+
+    join_retry = 0
+    # wait until the module has joined the network
+    while not lora.has_joined():
+        pycom.rgbled(0x101000) # now make the LED light up yellow in colour
+        time.sleep(5.0)
+        print('Not joined yet... ', rtc.now())
+        wdt.feed()
+        join_retry+=1
+        if join_retry > MAX_JOIN_RETRY:
+            print("Couldn join LoRa...")
+            my_config_dict['lora_ok'] = False
+            save_config(my_config_dict)
+            return
+
+    print("Connected to LoRa")
+    pycom.rgbled(0x000000) # now turn the LED off
+    wdt.feed()
+    lora.nvram_save()
+    my_config_dict['lora_ok'] = True
+    save_config(my_config_dict)
+
+
 def send_timesync():
     print("Timesync")
     try:
@@ -137,6 +165,8 @@ def send_timesync():
             msg = bytearray(struct.pack('2L', my_config_dict['sync_counter'], my_config_dict['sync_timestamp']))
             s.setblocking(True)
             s.send(msg)
+            s.setblocking(False)
+            parse_incoming_msg(s)
             lora.nvram_save()
             print("Done!")
         else:
@@ -169,6 +199,7 @@ def print_help():
     print("r: hard reset (looses time)")
     print("o: perform OTA update")
     print("l: reset LoRaWAN session")
+    print("j: join LoRaWAN server")
     print("t: print current time")
     print("TYYYY/MM/DD HH:MM:SS set current time (UTC). E.g. T20210801 10:05:00")
     print("VXX: set the node version, where XX is the version (01,02,03). E.g. V02 to set to pyranometer")
@@ -333,6 +364,85 @@ def do_measurements():
     float_values[6] = (batt.value()/4096.0)*354.8/31.6
     print("Battery: {}V".format(float_values[6]))
 
+def parse_incoming_msg(s):
+    try:
+        rx = s.recv(256)
+        if rx:
+            print("Got a packet from the cloud")
+            print(rx)
+            in_msg = bytearray(rx)
+            if len(in_msg) > 2:
+                if in_msg[0] == 1:
+                    # Sleep time command
+                    my_config_dict["sleep_time"] = int.from_bytes(in_msg[1:3], 'little')
+                    print("New sleep time {}s".format(my_config_dict["sleep_time"]))
+                elif in_msg[0] == 5:
+                    if in_msg == bytes([0x05, 0x02, 0x03]):
+                        print("Performing OTA!")
+                        pycom.rgbled(0x000011)
+                        # Perform OTA
+                        try:
+                            ota.connect()
+                            ota.update()
+                        except Exception as ex:
+                            print(ex)
+                            pycom.rgbled(0x110000)
+                elif in_msg[0] == 6:
+                    if len(in_msg) == 9:
+                        print("Got time sync!")
+                        ts_count, ts_offset = struct.unpack("Ii", bytearray(in_msg[1:]))
+                        if (ts_count== 0) | (ts_count == my_config_dict['sync_counter']):
+                            rtc.init(time.gmtime(time.time()+ts_offset))
+                            t = rtc.now()
+                            print("New time is: ", rtc.now() , time.time(), ts_offset)
+                            my_config_dict['sync_timestamp'] = time.time()
+                            save_config(my_config_dict)
+                        else:
+                            print("Out of sync message, got {ts_count} should be {counter}".format(ts_count=ts_count, counter=my_config_dict['sync_counter']))
+
+            elif len(in_msg) == 2:
+                if in_msg[0] == 2:
+                    # Select node type
+                    my_config_dict['node_version'] = in_msg[1]
+                    print("New sensor type: {}".format(my_config_dict['node_version']))
+            elif len(in_msg) == 2:
+                if in_msg[0] == 7:
+                    # Select air sensor type
+                    my_config_dict['air_sensor'] = in_msg[1]
+                    print("New sensor type: {}".format(my_config_dict['air_sensor']))
+            elif len(in_msg) == 1:
+                if in_msg[0] == 3:
+                    # Send version
+                    print("Send version name...")
+                    s.setblocking(True)
+                    s.bind(1)
+                    s.send(__version__ + " " + os.uname().release)
+                elif in_msg[0] == 4:
+                    # Send I2C scan
+                    print("Send I2C scan")
+                    s.setblocking(True)
+                    s.bind(1)
+                    debug_info = {'irt': scan_i2c(i2c_irt), 'air': scan_i2c(i2c_air)}
+                    s.send("{}".format(debug_info))
+                elif in_msg[0] == 8:
+                    # Reset LoRaWAN session
+                    print("Force LoRaWAN rejoin")
+                    my_config_dict['lora_ok'] = False
+                    save_config(my_config_dict)
+                    wdt.init(0)
+                    sys.exit()
+                elif in_msg[0] == 9:
+                    # Reset LoRaWAN session
+                    print("Clear configuration")
+                    config_dict = factory_config_dict
+                    save_config(config_dict)
+                    wdt.init(0)
+                    sys.exit()
+            save_config(my_config_dict)
+    except Exception as ex:
+        print("Error receiving packet", ex)
+
+
 # Give some time for degubbing
 time.sleep(2.5)
 
@@ -411,21 +521,21 @@ if (p_in()==0) and (my_config_dict['node_version']!=0x01):
     print(">>", end='')
     while (p_in()==0) & (chrono.read()<30):
         wdt.feed()
-        char = uart.read(1)
+        char = sys.stdin.read(1)
         if char is not None:
             chrono.reset()
             chrono.start()
-            if char == b'\r':
+            if char == '\n':
                 in_key = tmp_str
                 tmp_str = ""
-            elif char == b'\x7f':
+            elif char == '\x7f':
                 if len(tmp_str)>0:
                     tmp_str = tmp_str[:-1]
                     print('\b \b', end='')
                     #print('>>'+tmp_str, end='\r')
             else:
-              tmp_str += char.decode("utf-8")
-              print(char.decode("utf-8"), end='')
+              tmp_str += char
+              print(char, end='')
         if in_key is not None:
             print()
         else:
@@ -455,6 +565,10 @@ if (p_in()==0) and (my_config_dict['node_version']!=0x01):
             save_config(my_config_dict)
             wdt.init(0)
             sys.exit()
+        elif in_key == 'j':
+            print("Join LoRaWAN")
+            join_lora()
+            print(">>", end='')
         elif in_key == 't':
             t = rtc.now()
             ts = '{:04d}/{:02d}/{:02d} {:02d}:{:02d}:{:02d}'.format(t[0], t[1], t[2], t[3], t[4], t[5])
@@ -525,7 +639,8 @@ if (p_in()==0) and (my_config_dict['node_version']!=0x01):
             print("Unknown command")
             print(">>", end='')
         in_key = None
-        time.sleep(0.1)
+        machine.idle()
+        time.sleep(0.2)
     server.deinit()
     wlan.deinit()
     pycom.rgbled(0x00000)
@@ -630,82 +745,7 @@ while True:
     log_to_SD()
     wdt.feed()
     #time.sleep(4)
-    try:
-        rx = s.recv(256)
-        if rx:
-            print("Got a packet from the cloud")
-            print(rx)
-            in_msg = bytearray(rx)
-            if len(in_msg) > 2:
-                if in_msg[0] == 1:
-                    # Sleep time command
-                    my_config_dict["sleep_time"] = int.from_bytes(in_msg[1:3], 'little')
-                    print("New sleep time {}s".format(my_config_dict["sleep_time"]))
-                elif in_msg[0] == 5:
-                    if in_msg == bytes([0x05, 0x02, 0x03]):
-                        print("Performing OTA!")
-                        pycom.rgbled(0x000011)
-                        # Perform OTA
-                        try:
-                            ota.connect()
-                            ota.update()
-                        except Exception as ex:
-                            print(ex)
-                            pycom.rgbled(0x110000)
-                elif in_msg[0] == 6:
-                    if len(in_msg) == 9:
-                        print("Got time sync!")
-                        ts_count, ts_offset = struct.unpack("Ii", bytearray(in_msg[1:]))
-                        if (ts_count== 0) | (ts_count == my_config_dict['sync_counter']):
-                            rtc.init(time.gmtime(time.time()+ts_offset))
-                            t = rtc.now()
-                            print("New time is: ", rtc.now() , time.time(), ts_offset)
-                            my_config_dict['sync_timestamp'] = time.time()
-                            save_config(my_config_dict)
-                        else:
-                            print("Out of sync message, got {ts_count} should be {counter}".format(ts_count=ts_count, counter=my_config_dict['sync_counter']))
-
-            elif len(in_msg) == 2:
-                if in_msg[0] == 2:
-                    # Select node type
-                    my_config_dict['node_version'] = in_msg[1]
-                    print("New sensor type: {}".format(my_config_dict['node_version']))
-            elif len(in_msg) == 2:
-                if in_msg[0] == 7:
-                    # Select air sensor type
-                    my_config_dict['air_sensor'] = in_msg[1]
-                    print("New sensor type: {}".format(my_config_dict['air_sensor']))
-            elif len(in_msg) == 1:
-                if in_msg[0] == 3:
-                    # Send version
-                    print("Send version name...")
-                    s.setblocking(True)
-                    s.bind(1)
-                    s.send(__version__ + " " + os.uname().release)
-                elif in_msg[0] == 4:
-                    # Send I2C scan
-                    print("Send I2C scan")
-                    s.setblocking(True)
-                    s.bind(1)
-                    debug_info = {'irt': scan_i2c(i2c_irt), 'air': scan_i2c(i2c_air)}
-                    s.send("{}".format(debug_info))
-                elif in_msg[0] == 8:
-                    # Reset LoRaWAN session
-                    print("Force LoRaWAN rejoin")
-                    my_config_dict['lora_ok'] = False
-                    save_config(my_config_dict)
-                    wdt.init(0)
-                    sys.exit()
-                elif in_msg[0] == 9:
-                    # Reset LoRaWAN session
-                    print("Clear configuration")
-                    config_dict = factory_config_dict
-                    save_config(config_dict)
-                    wdt.init(0)
-                    sys.exit()
-            save_config(my_config_dict)
-    except Exception as ex:
-        print("Error receiving packet", ex)
+    parse_incoming_msg(s)
     lora.nvram_save()
     print("NV Save")
     time.sleep(4)
