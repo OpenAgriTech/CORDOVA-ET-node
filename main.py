@@ -17,7 +17,7 @@ __license__ = 'MIT'
 
 import network
 from network import LoRa, Sigfox, WLAN
-from machine import I2C, RTC, Pin, SD
+from machine import I2C, RTC, Pin, SD, Timer
 import os
 from OTA import WiFiOTA
 from sht30 import SHT30
@@ -297,15 +297,16 @@ def do_measurements():
         ### Soil sensor
         temp = None
         try:
-            if len(ow.scan()) > 0:
+            ow_devices = ow.scan()
+            if len(ow_devices) > 0:
                 print("Waking OWD...OK")
-                ow_devices = ow.scan()
                 if len(ow_devices) > 0:
                     ow_id = ubinascii.hexlify(ow_devices[0]).decode('ascii')
                 else:
                     ow_id = "None"
                 print("OW ID: {}".format(ow_id))
                 temp = DS18X20(ow)
+                time.sleep(1)
                 temp.start_convertion()
                 time.sleep(1)
                 float_values[5] = temp.read_temp_async()
@@ -392,6 +393,9 @@ app_key = ubinascii.unhexlify(my_config_dict['app_key'].replace(' ',''))
 print_lorawan()
 
 if (p_in()==0) and (my_config_dict['node_version']!=0x01):
+    chrono = Timer.Chrono()
+    chrono.start()
+    last_key = chrono.read()
     print("CORDOVA-ET Node v{version} Type: {node_type}".format(version=__version__, node_type=my_config_dict['node_version']))
 
     print("Entering Config Mode.")
@@ -405,10 +409,12 @@ if (p_in()==0) and (my_config_dict['node_version']!=0x01):
     in_key = None
     server.init(login=('uco', 'ias_csic'), timeout=600)
     print(">>", end='')
-    while p_in()==0:
+    while (p_in()==0) & (chrono.read()<30):
         wdt.feed()
         char = uart.read(1)
         if char is not None:
+            chrono.reset()
+            chrono.start()
             if char == b'\r':
                 in_key = tmp_str
                 tmp_str = ""
@@ -606,6 +612,8 @@ except Exception as ex:
 # * 5: Perform OTA update: [05 02 03]
 # * 6: Timesync message
 # * 7: Define air sensor type: [07 XX] # 0: None, 1: BME280, 2: SHT3x old, 3: SHT3x Rika
+# * 8: Reset LoRaWAN session and force to join again: [08]
+# * 9: Reset to factory defaults: [09]
 
 msg = bytearray(32)
 
@@ -648,7 +656,7 @@ while True:
                     if len(in_msg) == 9:
                         print("Got time sync!")
                         ts_count, ts_offset = struct.unpack("Ii", bytearray(in_msg[1:]))
-                        if ts_count == my_config_dict['sync_counter']:
+                        if (ts_count== 0) | (ts_count == my_config_dict['sync_counter']):
                             rtc.init(time.gmtime(time.time()+ts_offset))
                             t = rtc.now()
                             print("New time is: ", rtc.now() , time.time(), ts_offset)
@@ -681,6 +689,20 @@ while True:
                     s.bind(1)
                     debug_info = {'irt': scan_i2c(i2c_irt), 'air': scan_i2c(i2c_air)}
                     s.send("{}".format(debug_info))
+                elif in_msg[0] == 8:
+                    # Reset LoRaWAN session
+                    print("Force LoRaWAN rejoin")
+                    my_config_dict['lora_ok'] = False
+                    save_config(my_config_dict)
+                    wdt.init(0)
+                    sys.exit()
+                elif in_msg[0] == 9:
+                    # Reset LoRaWAN session
+                    print("Clear configuration")
+                    config_dict = factory_config_dict
+                    save_config(config_dict)
+                    wdt.init(0)
+                    sys.exit()
             save_config(my_config_dict)
     except Exception as ex:
         print("Error receiving packet", ex)
