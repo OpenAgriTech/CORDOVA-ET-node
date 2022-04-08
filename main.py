@@ -207,7 +207,7 @@ def print_help():
     print("s: send timesync message")
     print("CXXXX: Set the measurement cycle in seconds. E.g. C{cycle}".format(cycle=my_config_dict['sleep_time']))
     print()
-    print("Don't forget the press enter after the command")
+    print("Don't forget to press enter after the command")
 
 
 def print_lorawan():
